@@ -5,7 +5,10 @@ import path from 'path';
 const outdir = 'dist';
 
 // Define all environment variables that the application uses
-const define = {};
+const define = {
+  'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
+};
+
 const envVars = [
   'API_KEY',
   'GITHUB_TOKEN',
@@ -22,6 +25,7 @@ const envVars = [
   'FIREBASE_MESSAGING_SENDER_ID',
   'FIREBASE_APP_ID'
 ];
+
 for (const v of envVars) {
     define[`process.env.${v}`] = JSON.stringify(process.env[v] || '');
 }
@@ -40,30 +44,29 @@ async function build() {
     entryPoints: ['index.tsx'],
     bundle: true,
     outfile: path.join(outdir, 'index.js'),
+    format: 'esm',
     jsx: 'automatic',
     loader: { 
       '.tsx': 'tsx',
       '.ts': 'ts' 
     },
-    tsconfig: 'tsconfig.json', // Explicitly use tsconfig
+    tsconfig: 'tsconfig.json',
     minify: true,
     sourcemap: true,
     target: 'es2020',
-    define, // Inject environment variables
+    define,
     mainFields: ['module', 'main'],
+    platform: 'browser',
   });
   console.log('JavaScript bundling complete.');
 
-  // 3. Copy index.html and prepare it for production
+  // 3. Copy index.html and ensure it points to the bundled script
   console.log('Processing index.html for production...');
   let html = await fs.readFile('index.html', 'utf-8');
   
-  // Remove the importmap to prevent conflicts with the bundle
-  html = html.replace(/<script type="importmap">[\s\S]*?<\/script>/, '');
-  
-  // Update the script tag to point to the bundled JS file
-  html = html.replace('src="/index.tsx"', 'src="index.js"');
-  html = html.replace('src="index.tsx"', 'src="index.js"');
+  // Ensure the script tag points to index.js which is the bundled output
+  html = html.replace(/src="index\.tsx"/g, 'src="index.js"');
+  html = html.replace(/src="\/index\.tsx"/g, 'src="index.js"');
   
   await fs.writeFile(path.join(outdir, 'index.html'), html);
   console.log('index.html processed.');
