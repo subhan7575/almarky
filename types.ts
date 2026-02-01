@@ -1,4 +1,3 @@
-
 export interface Product {
   id: string;
   name: string;
@@ -33,7 +32,17 @@ export interface Order {
   timestamp: number;
   items: CartItem[];
   totalAmount: number;
-  // FIX: Added 'Cancelled' to the possible order statuses to align with application logic.
   status: 'Pending' | 'Confirmed' | 'Dispatched' | 'Delivered' | 'Cancelled';
   customerDetails: OrderDetails;
 }
+
+export interface Address {
+  id: string;
+  tag: 'Home' | 'Office' | 'Other';
+  fullName: string;
+  phone: string;
+  address: string;
+  city: string;
+  isDefault: boolean;
+}
+
