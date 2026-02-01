@@ -1,21 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { 
-  getAuth, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged,
-  User as FirebaseUser,
-  Auth
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  setDoc, 
-  serverTimestamp, 
-  Firestore 
-} from 'firebase/firestore';
+// FIX: The project appears to be using Firebase v8 (namespaced API) instead of v9 (modular API).
+// All imports and function calls have been updated to the v8 syntax to resolve module export errors.
+import firebase from 'firebase/app';
+import 'firebase/auth';
+import 'firebase/firestore';
+
 import { getFirebaseKey } from '../utils/security';
 
 // Firebase configuration using secure environment variables
@@ -39,26 +28,23 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Core Firebase Instances
-let firebaseApp: FirebaseApp;
-let firebaseAuth: Auth;
-let db: Firestore;
-const googleProvider = new GoogleAuthProvider();
+// Core Firebase Instances (v8 style)
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
 
-const getAlmarkyInstances = () => {
-  if (!firebaseApp) {
-    firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    firebaseAuth = getAuth(firebaseApp);
-    db = getFirestore(firebaseApp);
-  }
-  return { auth: firebaseAuth, db };
-};
+const firebaseAuth = firebase.auth();
+const db = firebase.firestore();
+const googleProvider = new firebase.auth.GoogleAuthProvider();
+
+// Define FirebaseUser type alias for clarity, matching the original code's aliasing.
+type FirebaseUser = firebase.User;
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -67,14 +53,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Function to sync user data to Firestore
   const syncUserToFirestore = async (fUser: FirebaseUser) => {
     try {
-      const { db: firestore } = getAlmarkyInstances();
-      const userRef = doc(firestore, 'users', fUser.uid);
-      await setDoc(userRef, {
+      const userRef = db.doc(`users/${fUser.uid}`);
+      await userRef.set({
         uid: fUser.uid,
         name: fUser.displayName,
         email: fUser.email,
         photo: fUser.photoURL,
-        lastLogin: serverTimestamp(),
+        lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
         role: 'customer' // Default role
       }, { merge: true });
     } catch (e) {
@@ -84,8 +69,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     try {
-      const { auth } = getAlmarkyInstances();
-      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      const unsubscribe = firebaseAuth.onAuthStateChanged(async (firebaseUser: FirebaseUser | null) => {
         if (firebaseUser) {
           const userData = {
             name: firebaseUser.displayName || "Almarky User",
@@ -109,17 +93,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
     try {
       setLoading(true);
-      const { auth } = getAlmarkyInstances();
-      const result = await signInWithPopup(auth, googleProvider);
+      const result = await firebaseAuth.signInWithPopup(googleProvider);
       if (result.user) {
         await syncUserToFirestore(result.user);
       }
+      return { success: true };
     } catch (error: any) {
       console.error("Login Error:", error);
-      alert("Registration Error: Please check your internet or try again. (Reason: " + (error.code || "Network") + ")");
+      const errorMessage = error.message || "An unknown error occurred during sign-in.";
+      return { success: false, error: errorMessage };
     } finally {
       setLoading(false);
     }
@@ -128,8 +113,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = async () => {
     try {
       setLoading(true);
-      const { auth } = getAlmarkyInstances();
-      await signOut(auth);
+      await firebaseAuth.signOut();
     } catch (error) {
       console.error("Logout Error:", error);
     } finally {
