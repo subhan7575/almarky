@@ -5,6 +5,7 @@ import ProfileOverview from '../components/account/ProfileOverview';
 import AddressBook from '../components/account/AddressBook';
 import MyOrders from './MyOrders';
 import ProfileSettings from '../components/account/ProfileSettings';
+import Spinner from '../components/ui/Spinner';
 
 type Tab = 'overview' | 'orders' | 'addresses' | 'settings';
 
@@ -28,8 +29,8 @@ const AccountPage: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center">
-        <div className="w-16 h-16 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">Syncing Almarky Account...</p>
+        <Spinner />
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-4">Syncing Almarky Account...</p>
       </div>
     );
   }
