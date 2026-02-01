@@ -14,11 +14,12 @@ import {
   getFirestore, 
   doc, 
   setDoc, 
+  getDoc,
   serverTimestamp, 
-  Firestore 
+  Firestore,
+  updateDoc
 } from 'firebase/firestore';
 
-// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyAQpivPdkecOb-xMmegwtT0ioEEBbzRXOA",
   authDomain: "almarky-official.firebaseapp.com",
@@ -34,7 +35,8 @@ interface User {
   email: string;
   photo: string;
   isLoggedIn: boolean;
-  uid?: string;
+  uid: string;
+  phone?: string;
 }
 
 interface AuthContextType {
@@ -42,11 +44,11 @@ interface AuthContextType {
   loading: boolean;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  updateUserProfile: (uid: string, data: { name?: string; phone?: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Core Firebase Instances (v9+ Modular API)
 const firebaseApp: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const analytics = getAnalytics(firebaseApp);
 const firebaseAuth: Auth = getAuth(firebaseApp);
@@ -57,47 +59,54 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Function to sync user data to Firestore
-  const syncUserToFirestore = async (fUser: FirebaseUser) => {
-    try {
-      const userRef = doc(db, 'users', fUser.uid);
-      await setDoc(userRef, {
-        uid: fUser.uid,
-        name: fUser.displayName,
-        email: fUser.email,
-        photo: fUser.photoURL,
+  const fetchUserProfile = async (firebaseUser: FirebaseUser): Promise<User> => {
+    const userRef = doc(db, 'users', firebaseUser.uid);
+    const userSnap = await getDoc(userRef);
+
+    if (userSnap.exists()) {
+      const dbUser = userSnap.data();
+      return {
+        uid: firebaseUser.uid,
+        name: dbUser.name || firebaseUser.displayName || "Almarky User",
+        email: dbUser.email || firebaseUser.email || "",
+        photo: dbUser.photo || firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
+        isLoggedIn: true,
+        phone: dbUser.phone || ''
+      };
+    } else {
+      // Create profile if it doesn't exist
+      const newUser = {
+        uid: firebaseUser.uid,
+        name: firebaseUser.displayName,
+        email: firebaseUser.email,
+        photo: firebaseUser.photoURL,
         lastLogin: serverTimestamp(),
-        role: 'customer' // Default role
-      }, { merge: true });
-    } catch (e) {
-      console.error("Firestore Sync Failed:", e);
+        createdAt: serverTimestamp(),
+        role: 'customer',
+        phone: ''
+      };
+      await setDoc(userRef, newUser, { merge: true });
+      return {
+        ...newUser,
+        name: newUser.name || "Almarky User",
+        email: newUser.email || "",
+        photo: newUser.photo || "https://www.gravatar.com/avatar/?d=mp",
+        isLoggedIn: true,
+      };
     }
   };
 
   useEffect(() => {
-    try {
-      const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser: FirebaseUser | null) => {
-        if (firebaseUser) {
-          const userData = {
-            name: firebaseUser.displayName || "Almarky User",
-            email: firebaseUser.email || "",
-            photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y",
-            isLoggedIn: true,
-            uid: firebaseUser.uid
-          };
-          setUser(userData);
-          // Sync profile to database whenever state changes to logged in (for session persistence)
-          await syncUserToFirestore(firebaseUser);
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      });
-      return () => unsubscribe();
-    } catch (e) {
-      console.error("Firebase Initialization Error:", e);
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const fullUserProfile = await fetchUserProfile(firebaseUser);
+        setUser(fullUserProfile);
+      } else {
+        setUser(null);
+      }
       setLoading(false);
-    }
+    });
+    return () => unsubscribe();
   }, []);
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
@@ -105,26 +114,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setLoading(true);
       const result = await signInWithPopup(firebaseAuth, googleProvider);
       const firebaseUser = result.user;
-
       if (firebaseUser) {
-        // Create user object for immediate UI update
-        const userData = {
-          name: firebaseUser.displayName || "Almarky User",
-          email: firebaseUser.email || "",
-          photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y",
-          isLoggedIn: true,
-          uid: firebaseUser.uid
-        };
-        // Update state instantly for a seamless experience
-        setUser(userData);
-        // Sync to Firestore in the background
-        await syncUserToFirestore(firebaseUser);
+        const fullUserProfile = await fetchUserProfile(firebaseUser);
+        setUser(fullUserProfile);
       }
       return { success: true };
     } catch (error: any) {
       console.error("Login Error:", error);
-      const errorMessage = error.message || "An unknown error occurred during sign-in.";
-      return { success: false, error: errorMessage };
+      return { success: false, error: error.message || "An unknown error occurred." };
     } finally {
       setLoading(false);
     }
@@ -132,17 +129,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     try {
-      setLoading(true);
       await signOut(firebaseAuth);
+      setUser(null);
     } catch (error) {
       console.error("Logout Error:", error);
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const updateUserProfile = async (uid: string, data: { name?: string; phone?: string }) => {
+    try {
+      const userRef = doc(db, 'users', uid);
+      await updateDoc(userRef, data);
+      setUser(prevUser => prevUser ? { ...prevUser, ...data } : null);
+      return { success: true };
+    } catch (error: any) {
+      console.error("Profile Update Error:", error);
+      return { success: false, error: error.message };
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, loading, loginWithGoogle, logout, updateUserProfile }}>
       {children}
     </AuthContext.Provider>
   );
