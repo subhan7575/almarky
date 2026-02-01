@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useProducts } from '../../context/ProductContext';
 import { Product } from '../../types';
@@ -13,12 +12,10 @@ const AdminProducts: React.FC = () => {
   const filtered = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const handleAddSubmit = (product: Product) => {
-    // FIX: Removed incorrect call to addProduct. The form component handles this logic.
     setShowAddModal(false);
   };
 
   const handleEditSubmit = (product: Product) => {
-    // FIX: Removed incorrect call to updateProduct. The form component handles this logic.
     setEditingProduct(null);
   };
 
