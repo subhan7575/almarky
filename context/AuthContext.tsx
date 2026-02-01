@@ -59,48 +59,67 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserProfile = async (firebaseUser: FirebaseUser): Promise<User> => {
-    const userRef = doc(db, 'users', firebaseUser.uid);
-    const userSnap = await getDoc(userRef);
+  // This function runs in the background to sync/fetch full profile data from Firestore
+  // without blocking the UI.
+  const syncAndFetchFullProfile = async (firebaseUser: FirebaseUser) => {
+    try {
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      const userSnap = await getDoc(userRef);
 
-    if (userSnap.exists()) {
-      const dbUser = userSnap.data();
-      return {
-        uid: firebaseUser.uid,
-        name: dbUser.name || firebaseUser.displayName || "Almarky User",
-        email: dbUser.email || firebaseUser.email || "",
-        photo: dbUser.photo || firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
-        isLoggedIn: true,
-        phone: dbUser.phone || ''
-      };
-    } else {
-      // Create profile if it doesn't exist
-      const newUser = {
-        uid: firebaseUser.uid,
-        name: firebaseUser.displayName,
-        email: firebaseUser.email,
-        photo: firebaseUser.photoURL,
-        lastLogin: serverTimestamp(),
-        createdAt: serverTimestamp(),
-        role: 'customer',
-        phone: ''
-      };
-      await setDoc(userRef, newUser, { merge: true });
-      return {
-        ...newUser,
-        name: newUser.name || "Almarky User",
-        email: newUser.email || "",
-        photo: newUser.photo || "https://www.gravatar.com/avatar/?d=mp",
-        isLoggedIn: true,
-      };
+      if (userSnap.exists()) {
+        const dbUser = userSnap.data();
+        // We have the full profile, let's update the state with any extra info like phone number
+        setUser(prevUser => ({
+          // Base the update on the latest auth state, but enrich with DB data
+          ...(prevUser || {
+            name: firebaseUser.displayName || "Almarky User",
+            email: firebaseUser.email || "",
+            photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
+            isLoggedIn: true,
+            uid: firebaseUser.uid
+          }),
+          phone: dbUser.phone || '',
+          name: dbUser.name || firebaseUser.displayName || "Almarky User", // DB name is source of truth if exists
+        }));
+        // Update last login time in the background
+        await setDoc(userRef, { lastLogin: serverTimestamp() }, { merge: true });
+
+      } else {
+        // Profile doesn't exist, create it in Firestore
+        const newUserProfile = {
+          uid: firebaseUser.uid,
+          name: firebaseUser.displayName,
+          email: firebaseUser.email,
+          photo: firebaseUser.photoURL,
+          lastLogin: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          role: 'customer',
+          phone: ''
+        };
+        await setDoc(userRef, newUserProfile);
+      }
+    } catch (e) {
+      console.error("Firestore Sync Failed:", e);
+      // The user is already logged in on the UI, so we just log the error.
+      // The app remains functional.
     }
   };
 
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (firebaseUser) => {
       if (firebaseUser) {
-        const fullUserProfile = await fetchUserProfile(firebaseUser);
-        setUser(fullUserProfile);
+        // Optimistic UI update: Log the user in immediately with Google data
+        setUser({
+          name: firebaseUser.displayName || "Almarky User",
+          email: firebaseUser.email || "",
+          photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
+          isLoggedIn: true,
+          uid: firebaseUser.uid,
+          phone: '', // Default phone until DB sync
+        });
+        // Then, sync with Firestore in the background
+        syncAndFetchFullProfile(firebaseUser);
       } else {
         setUser(null);
       }
@@ -110,17 +129,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+    setLoading(true);
     try {
-      setLoading(true);
       const result = await signInWithPopup(firebaseAuth, googleProvider);
       const firebaseUser = result.user;
+
       if (firebaseUser) {
-        const fullUserProfile = await fetchUserProfile(firebaseUser);
-        setUser(fullUserProfile);
+        // Optimistic UI update: Set user state immediately for a fast experience
+        setUser({
+          name: firebaseUser.displayName || "Almarky User",
+          email: firebaseUser.email || "",
+          photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
+          isLoggedIn: true,
+          uid: firebaseUser.uid,
+          phone: ''
+        });
+        // Sync to Firestore in the background, don't await it here
+        syncAndFetchFullProfile(firebaseUser);
       }
       return { success: true };
     } catch (error: any) {
       console.error("Login Error:", error);
+      // Provide a more specific error message if Firestore is the issue
+      if (error.message.includes('offline')) {
+        return { success: false, error: "Could not connect to the profile server. Please check your internet connection." };
+      }
       return { success: false, error: error.message || "An unknown error occurred." };
     } finally {
       setLoading(false);
