@@ -76,10 +76,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const [addresses, setAddresses] = useState<Address[]>([]);
 
-  const fetchUserProfile = async (firebaseUser: FirebaseUser) => {
-    // ... (This function is good, no changes needed)
-  };
-
   const fetchAddresses = async (uid: string) => {
     try {
       const addressesCol = collection(db, 'users', uid, 'addresses');
@@ -91,13 +87,54 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setAddresses([]);
     }
   };
+  
+  const syncAndFetchFullProfile = async (firebaseUser: FirebaseUser) => {
+    try {
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const dbUser = userSnap.data();
+        setUser(prevUser => ({
+          ...(prevUser as User),
+          ...dbUser,
+        }));
+        await updateDoc(userRef, { lastLogin: serverTimestamp() });
+      } else {
+        const newUserProfile = {
+          uid: firebaseUser.uid,
+          name: firebaseUser.displayName || "Almarky User",
+          email: firebaseUser.email || "",
+          photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
+          lastLogin: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          role: 'customer',
+          phone: ''
+        };
+        await setDoc(userRef, newUserProfile);
+        // FIX: The object being set as user state was missing the required `isLoggedIn` property.
+        // This adds the property and uses `as unknown as User` to accommodate extra fields from Firestore,
+        // making it consistent with the logic for existing users.
+        setUser({ ...newUserProfile, isLoggedIn: true } as unknown as User);
+      }
+      await fetchAddresses(firebaseUser.uid);
+    } catch (error) {
+      console.error("Firestore sync failed:", error);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
       if (firebaseUser) {
-        const fullUserProfile = await fetchUserProfile(firebaseUser);
-        setUser(fullUserProfile);
-        await fetchAddresses(firebaseUser.uid);
+        setUser({
+          name: firebaseUser.displayName || "Almarky User",
+          email: firebaseUser.email || "",
+          photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
+          isLoggedIn: true,
+          uid: firebaseUser.uid,
+          phone: '',
+        });
+        await syncAndFetchFullProfile(firebaseUser);
       } else {
         setUser(null);
         setAddresses([]);
@@ -110,13 +147,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
     setLoading(true);
     try {
-      const result = await signInWithPopup(firebaseAuth, googleProvider);
-      const firebaseUser = result.user;
-      if (firebaseUser) {
-        const fullUserProfile = await fetchUserProfile(firebaseUser);
-        setUser(fullUserProfile);
-        await fetchAddresses(firebaseUser.uid);
-      }
+      await signInWithPopup(firebaseAuth, googleProvider);
       return { success: true };
     } catch (error: any) {
       console.error("Login Error:", error);
@@ -143,7 +174,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(prevUser => prevUser ? { ...prevUser, ...data } : null);
       return { success: true };
     } catch (error: any) {
-      console.error("Profile Update Error:", error);
       return { success: false, error: error.message };
     }
   };
@@ -160,22 +190,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(prevUser => prevUser ? { ...prevUser, photo: photoURL } : null);
       return { success: true };
     } catch (error: any) {
-      console.error("Photo Update Error:", error);
       return { success: false, error: error.message };
     }
   };
-
+  
   const setDefaultAddress = async (uid: string, newDefaultId: string) => {
     try {
       const batch = writeBatch(db);
       const addressesRef = collection(db, 'users', uid, 'addresses');
       const q = query(addressesRef, where("isDefault", "==", true));
       const querySnapshot = await getDocs(q);
+      
       querySnapshot.forEach((doc) => {
         if (doc.id !== newDefaultId) batch.update(doc.ref, { isDefault: false });
       });
-      const newDefaultRef = doc(addressesRef, newDefaultId);
-      batch.update(newDefaultRef, { isDefault: true });
+      
+      if (newDefaultId) {
+        const newDefaultRef = doc(addressesRef, newDefaultId);
+        batch.update(newDefaultRef, { isDefault: true });
+      }
+
       await batch.commit();
       await fetchAddresses(uid);
       return { success: true };
@@ -184,7 +218,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addAddress = async (uid: string, addressData: Omit<Address, 'id'>) => {
     try {
-      if (addressData.isDefault) { await setDefaultAddress(uid, ''); } // Unset any existing default
+      if (addressData.isDefault && addresses.some(a => a.isDefault)) {
+        await setDefaultAddress(uid, '');
+      }
       const addressesCol = collection(db, 'users', uid, 'addresses');
       const newDocRef = await addDoc(addressesCol, addressData);
       if (addressData.isDefault) { await setDefaultAddress(uid, newDocRef.id); }
@@ -210,7 +246,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return { success: true };
     } catch (e: any) { return { success: false, error: e.message }; }
   };
-
+  
   return (
     <AuthContext.Provider value={{ 
       user, loading, loginWithGoogle, logout, updateUserProfile, updateUserPhoto,
