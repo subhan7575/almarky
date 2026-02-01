@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import ProfileOverview from '../components/account/ProfileOverview';
 import AddressBook from '../components/account/AddressBook';
 import MyOrders from './MyOrders';
+import ProfileSettings from '../components/account/ProfileSettings';
 
 type Tab = 'overview' | 'orders' | 'addresses' | 'settings';
 
@@ -16,7 +17,11 @@ const AccountPage: React.FC = () => {
     setLoginError(null); // Clear previous errors
     const result = await loginWithGoogle();
     if (!result.success && result.error) {
-      setLoginError(result.error);
+      if (result.error.includes('identitytoolkit')) {
+        setLoginError('Google Sign-In is not enabled for this project. Please contact support.');
+      } else {
+        setLoginError(result.error);
+      }
     }
   };
 
@@ -69,24 +74,24 @@ const AccountPage: React.FC = () => {
   }
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'overview', label: 'Overview', icon: '🏠' },
-    { id: 'orders', label: 'Orders', icon: '📦' },
+    { id: 'overview', label: 'Dashboard', icon: '🏠' },
+    { id: 'orders', label: 'My Orders', icon: '📦' },
     { id: 'addresses', label: 'Addresses', icon: '📍' },
-    { id: 'settings', label: 'Profile', icon: '👤' },
+    { id: 'settings', label: 'Profile Settings', icon: '👤' },
   ];
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 md:py-16 pb-24 md:pb-16">
       <div className="flex flex-col lg:flex-row gap-10 items-start">
-        <aside className="w-full lg:w-72 space-y-6">
+        <aside className="w-full lg:w-72 space-y-6 lg:sticky lg:top-24">
            <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-xl text-center relative overflow-hidden group">
               <div className="relative z-10">
                 <div className="relative inline-block mb-6">
-                  <img src={user.photo} className="w-24 h-24 rounded-full border-4 border-white shadow-2xl group-hover:scale-105 transition-transform duration-500" alt="" />
+                  <img src={user.photo} className="w-24 h-24 rounded-full border-4 border-white shadow-2xl group-hover:scale-105 transition-transform duration-500" alt="User Profile" />
                   <div className="absolute bottom-1 right-1 bg-emerald-500 w-6 h-6 rounded-full border-4 border-white shadow-sm"></div>
                 </div>
                 <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">{user.name}</h2>
-                <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mt-2">{user.email}</p>
+                <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mt-2 truncate">{user.email}</p>
                 <button 
                   onClick={logout}
                   className="mt-8 w-full bg-slate-50 text-slate-400 font-black py-3.5 rounded-2xl hover:bg-rose-50 hover:text-rose-600 transition-all text-[9px] uppercase tracking-widest border border-slate-100"
@@ -101,7 +106,7 @@ const AccountPage: React.FC = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-shrink-0 flex items-center px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                  className={`flex-shrink-0 w-full flex items-center px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
                     activeTab === tab.id 
                     ? 'bg-slate-900 text-white shadow-lg' 
                     : 'text-slate-400 hover:text-slate-900 hover:bg-slate-50'
@@ -118,17 +123,7 @@ const AccountPage: React.FC = () => {
            {activeTab === 'overview' && <ProfileOverview />}
            {activeTab === 'orders' && <MyOrders />}
            {activeTab === 'addresses' && <AddressBook />}
-           {activeTab === 'settings' && (
-             <div className="space-y-8 animate-in fade-in duration-500">
-               <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight text-center">Account Security</h3>
-               <div className="max-w-md mx-auto p-10 bg-slate-50 rounded-[2rem] border border-slate-100 text-center">
-                  <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-                  </div>
-                  <p className="text-xs font-bold text-slate-600">Your account is secured via Google Authentication. No password required.</p>
-               </div>
-             </div>
-           )}
+           {activeTab === 'settings' && <ProfileSettings />}
         </main>
       </div>
     </div>
