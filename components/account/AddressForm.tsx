@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Address } from '../../types';
+import Modal from '../ui/Modal';
 
 interface AddressFormProps {
   initialData?: Address | null;
@@ -49,9 +50,8 @@ const AddressForm: React.FC<AddressFormProps> = ({ initialData, onCancel }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={onCancel}></div>
-      <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl relative z-10 animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+    <Modal isOpen={true} onClose={onCancel}>
+      <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh]">
         <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center">
           <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">{initialData ? 'Edit Address' : 'Add New Address'}</h3>
           <button onClick={onCancel} className="p-2 text-slate-300 hover:text-rose-500 transition-all active:scale-90">&times;</button>
@@ -102,7 +102,7 @@ const AddressForm: React.FC<AddressFormProps> = ({ initialData, onCancel }) => {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 };
 
