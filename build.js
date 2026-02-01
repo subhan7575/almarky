@@ -5,7 +5,6 @@ import path from 'path';
 const outdir = 'dist';
 
 // Define all environment variables that the application uses
-// This tells esbuild to replace `process.env.VAR_NAME` with the actual value during build
 const define = {};
 const envVars = [
   'API_KEY',
@@ -24,12 +23,8 @@ const envVars = [
   'FIREBASE_APP_ID'
 ];
 for (const v of envVars) {
-    // FIX: Use JSON.stringify to ensure the value is a valid JSON string literal.
-    // This automatically handles quotes, newlines, and other special characters,
-    // preventing the "Invalid define value" error during Vercel builds.
     define[`process.env.${v}`] = JSON.stringify(process.env[v] || '');
 }
-
 
 async function build() {
   console.log('Starting Almarky production build...');
@@ -46,11 +41,16 @@ async function build() {
     bundle: true,
     outfile: path.join(outdir, 'index.js'),
     jsx: 'automatic',
-    loader: { '.tsx': 'tsx' },
+    loader: { 
+      '.tsx': 'tsx',
+      '.ts': 'ts' 
+    },
+    tsconfig: 'tsconfig.json', // Explicitly use tsconfig
     minify: true,
     sourcemap: true,
     target: 'es2020',
     define, // Inject environment variables
+    mainFields: ['module', 'main'],
   });
   console.log('JavaScript bundling complete.');
 
@@ -58,10 +58,11 @@ async function build() {
   console.log('Processing index.html for production...');
   let html = await fs.readFile('index.html', 'utf-8');
   
-  // CRITICAL FIX: Remove the importmap to prevent conflicts with the bundle.
+  // Remove the importmap to prevent conflicts with the bundle
   html = html.replace(/<script type="importmap">[\s\S]*?<\/script>/, '');
   
-  // Update the script tag to point to the bundled JS file.
+  // Update the script tag to point to the bundled JS file
+  html = html.replace('src="/index.tsx"', 'src="index.js"');
   html = html.replace('src="index.tsx"', 'src="index.js"');
   
   await fs.writeFile(path.join(outdir, 'index.html'), html);
