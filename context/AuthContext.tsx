@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAnalytics } from "firebase/analytics";
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -17,16 +18,15 @@ import {
   Firestore 
 } from 'firebase/firestore';
 
-import { getFirebaseKey } from '../utils/security';
-
-// Firebase configuration using secure environment variables
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: getFirebaseKey(), 
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "almarky-pk.firebaseapp.com",
-  projectId: process.env.FIREBASE_PROJECT_ID || "almarky-pk",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "almarky-pk.appspot.com",
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "1234567890",
-  appId: process.env.FIREBASE_APP_ID || "1:1234567890:web:abcdef123456"
+  apiKey: "AIzaSyAQpivPdkecOb-xMmegwtT0ioEEBbzRXOA",
+  authDomain: "almarky-official.firebaseapp.com",
+  projectId: "almarky-official",
+  storageBucket: "almarky-official.appspot.com",
+  messagingSenderId: "344943496520",
+  appId: "1:344943496520:web:d77c828a619f3ca882b77d",
+  measurementId: "G-RTW87LBFP4"
 };
 
 interface User {
@@ -48,6 +48,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Core Firebase Instances (v9+ Modular API)
 const firebaseApp: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const analytics = getAnalytics(firebaseApp);
 const firebaseAuth: Auth = getAuth(firebaseApp);
 const db: Firestore = getFirestore(firebaseApp);
 const googleProvider = new GoogleAuthProvider();
