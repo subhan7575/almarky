@@ -1,7 +1,5 @@
-
 import React, { useState } from 'react';
 import { useAdminOrders } from '../../context/AdminOrderContext';
-// FIX: Imported the Order type to resolve a type error when casting the status value.
 import { Order } from '../../types';
 
 const AdminOrders: React.FC = () => {
@@ -18,7 +16,6 @@ const AdminOrders: React.FC = () => {
           <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Review and fulfill customer requests</p>
         </div>
         <div className="flex bg-white p-1 rounded-2xl border border-slate-100 shadow-sm">
-          {/* FIX: Changed 'Shipped' to 'Dispatched' to match the status types used in the application. */}
           {['All', 'Pending', 'Dispatched', 'Delivered', 'Cancelled'].map(f => (
             <button 
               key={f}
