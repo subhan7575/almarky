@@ -1,9 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-// FIX: The project appears to be using Firebase v8 (namespaced API) instead of v9 (modular API).
-// All imports and function calls have been updated to the v8 syntax to resolve module export errors.
-import firebase from 'firebase/app';
-import 'firebase/auth';
-import 'firebase/firestore';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser,
+  Auth
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  serverTimestamp, 
+  Firestore 
+} from 'firebase/firestore';
 
 import { getFirebaseKey } from '../utils/security';
 
@@ -34,17 +46,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Core Firebase Instances (v8 style)
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
-
-const firebaseAuth = firebase.auth();
-const db = firebase.firestore();
-const googleProvider = new firebase.auth.GoogleAuthProvider();
-
-// Define FirebaseUser type alias for clarity, matching the original code's aliasing.
-type FirebaseUser = firebase.User;
+// Core Firebase Instances (v9+ Modular API)
+const firebaseApp: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const firebaseAuth: Auth = getAuth(firebaseApp);
+const db: Firestore = getFirestore(firebaseApp);
+const googleProvider = new GoogleAuthProvider();
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -53,13 +59,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Function to sync user data to Firestore
   const syncUserToFirestore = async (fUser: FirebaseUser) => {
     try {
-      const userRef = db.doc(`users/${fUser.uid}`);
-      await userRef.set({
+      const userRef = doc(db, 'users', fUser.uid);
+      await setDoc(userRef, {
         uid: fUser.uid,
         name: fUser.displayName,
         email: fUser.email,
         photo: fUser.photoURL,
-        lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
+        lastLogin: serverTimestamp(),
         role: 'customer' // Default role
       }, { merge: true });
     } catch (e) {
@@ -69,7 +75,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     try {
-      const unsubscribe = firebaseAuth.onAuthStateChanged(async (firebaseUser: FirebaseUser | null) => {
+      const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser: FirebaseUser | null) => {
         if (firebaseUser) {
           const userData = {
             name: firebaseUser.displayName || "Almarky User",
@@ -96,7 +102,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
     try {
       setLoading(true);
-      const result = await firebaseAuth.signInWithPopup(googleProvider);
+      const result = await signInWithPopup(firebaseAuth, googleProvider);
       if (result.user) {
         await syncUserToFirestore(result.user);
       }
@@ -113,7 +119,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = async () => {
     try {
       setLoading(true);
-      await firebaseAuth.signOut();
+      await signOut(firebaseAuth);
     } catch (error) {
       console.error("Logout Error:", error);
     } finally {
