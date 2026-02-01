@@ -24,7 +24,10 @@ const envVars = [
   'FIREBASE_APP_ID'
 ];
 for (const v of envVars) {
-    define[`process.env.${v}`] = `"${process.env[v] || ''}"`;
+    // FIX: Use JSON.stringify to ensure the value is a valid JSON string literal.
+    // This automatically handles quotes, newlines, and other special characters,
+    // preventing the "Invalid define value" error during Vercel builds.
+    define[`process.env.${v}`] = JSON.stringify(process.env[v] || '');
 }
 
 
