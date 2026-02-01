@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import useClickOutside from '../../hooks/useClickOutside.ts';
+import useClickOutside from '../../hooks/useClickOutside';
 
 interface ModalProps {
   isOpen: boolean;
