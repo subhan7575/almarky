@@ -30,12 +30,12 @@ import { getStorage, ref, uploadBytes, getDownloadURL, Storage } from 'firebase/
 import { Address } from '../types';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAQpivPdkecOb-xMmegwtT0ioEEBbzRXOA",
-  authDomain: "almarky-official.firebaseapp.com",
-  projectId: "almarky-official",
-  storageBucket: "almarky-official.appspot.com",
-  messagingSenderId: "344943496520",
-  appId: "1:344943496520:web:d77c828a619f3ca882b77d",
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyAQpivPdkecOb-xMmegwtT0ioEEBbzRXOA",
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "almarky-official.firebaseapp.com",
+  projectId: process.env.FIREBASE_PROJECT_ID || "almarky-official",
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "almarky-official.appspot.com",
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "344943496520",
+  appId: process.env.FIREBASE_APP_ID || "1:344943496520:web:d77c828a619f3ca882b77d",
   measurementId: "G-RTW87LBFP4"
 };
 
@@ -112,9 +112,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           phone: ''
         };
         await setDoc(userRef, newUserProfile);
-        // FIX: The object being set as user state was missing the required `isLoggedIn` property.
-        // This adds the property and uses `as unknown as User` to accommodate extra fields from Firestore,
-        // making it consistent with the logic for existing users.
         setUser({ ...newUserProfile, isLoggedIn: true } as unknown as User);
       }
       await fetchAddresses(firebaseUser.uid);
