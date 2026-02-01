@@ -86,7 +86,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             uid: firebaseUser.uid
           };
           setUser(userData);
-          // Sync profile to database whenever state changes to logged in
+          // Sync profile to database whenever state changes to logged in (for session persistence)
           await syncUserToFirestore(firebaseUser);
         } else {
           setUser(null);
@@ -104,8 +104,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       setLoading(true);
       const result = await signInWithPopup(firebaseAuth, googleProvider);
-      if (result.user) {
-        await syncUserToFirestore(result.user);
+      const firebaseUser = result.user;
+
+      if (firebaseUser) {
+        // Create user object for immediate UI update
+        const userData = {
+          name: firebaseUser.displayName || "Almarky User",
+          email: firebaseUser.email || "",
+          photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y",
+          isLoggedIn: true,
+          uid: firebaseUser.uid
+        };
+        // Update state instantly for a seamless experience
+        setUser(userData);
+        // Sync to Firestore in the background
+        await syncUserToFirestore(firebaseUser);
       }
       return { success: true };
     } catch (error: any) {
