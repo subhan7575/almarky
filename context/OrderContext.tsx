@@ -26,6 +26,7 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const { user } = useAuth();
 
   const fetchUserOrders = async () => {
+    // Priority 1: Load from local cache for instant UI
     const saved = localStorage.getItem('almarky_user_orders');
     if (saved) setOrders(JSON.parse(saved));
 
@@ -33,9 +34,10 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     
     try {
       const ordersRef = collection(db, 'orders');
+      // Using phone number or UID as the link
       const q = query(
         ordersRef, 
-        where("customerDetails.phoneNumber", "==", user.phone || ""),
+        where("customerDetails.phoneNumber", "==", user.phone || user.email),
         orderBy("timestamp", "desc")
       );
       const querySnapshot = await getDocs(q);
@@ -45,7 +47,7 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         localStorage.setItem('almarky_user_orders', JSON.stringify(fetchedOrders));
       }
     } catch (e) {
-      console.warn("Firestore order fetch failed, using local vault.");
+      console.warn("Cloud order sync skipped.");
     }
   };
 
@@ -54,22 +56,24 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [user]);
 
   const saveOrder = async (order: Order) => {
-    // 1. Update local storage instantly
+    // CRITICAL: Local persistence first. This is instant and failsafe.
     const currentOrders = JSON.parse(localStorage.getItem('almarky_user_orders') || '[]');
     const updatedOrders = [order, ...currentOrders];
     localStorage.setItem('almarky_user_orders', JSON.stringify(updatedOrders));
     setOrders(updatedOrders);
     
-    // 2. Sync to Firestore in background (non-blocking)
+    // Background Sync to Firestore
     if (db) {
       const orderRef = doc(db, 'orders', order.orderId);
-      setDoc(orderRef, order).catch(err => console.error("Firestore sync background failed:", err));
+      // We purposefully don't "await" this to prevent checkout hanging
+      setDoc(orderRef, order).catch(err => console.error("Firestore background sync failed:", err));
     }
     
     return { success: true };
   };
 
   const getOrderById = async (id: string) => {
+    // Instant local check
     const local = orders.find(o => o.orderId === id);
     if (local) return local;
 
