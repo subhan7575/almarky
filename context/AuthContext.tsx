@@ -1,7 +1,5 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-// Fix: Import types separately to resolve resolution issues in certain environments.
 import type { FirebaseApp } from 'firebase/app';
 import { getAnalytics } from "firebase/analytics";
 import { 
@@ -11,7 +9,6 @@ import {
   signOut, 
   onAuthStateChanged
 } from 'firebase/auth';
-// Fix: Use import type for Firebase interfaces.
 import type { User as FirebaseUser, Auth } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -28,14 +25,11 @@ import {
   query, 
   where 
 } from 'firebase/firestore';
-// Fix: Use import type for Firestore interface.
 import type { Firestore } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-// Fix: Correct type name from Storage to FirebaseStorage to avoid conflict with global browser Storage.
 import type { FirebaseStorage } from 'firebase/storage';
 import { Address } from '../types';
 
-// Using environment variables provided by the user in the hosting environment
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -71,19 +65,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Initialize Firebase only if config is present
+// Initialize Firebase only once
 let firebaseApp: FirebaseApp;
-let firebaseAuth: Auth;
-let db: Firestore;
-let storage: FirebaseStorage;
+export let auth: Auth;
+export let db: Firestore;
+export let storage: FirebaseStorage;
 
 try {
   firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-  firebaseAuth = getAuth(firebaseApp);
+  auth = getAuth(firebaseApp);
   db = getFirestore(firebaseApp);
   storage = getStorage(firebaseApp);
 } catch (error) {
-  console.error("Firebase Initialization Error: Ensure all FIREBASE_ environment variables are set.", error);
+  console.error("Firebase Initialization Error:", error);
 }
 
 const googleProvider = new GoogleAuthProvider();
@@ -94,6 +88,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [addresses, setAddresses] = useState<Address[]>([]);
 
   const fetchAddresses = async (uid: string) => {
+    if (!db) return;
     try {
       const addressesCol = collection(db, 'users', uid, 'addresses');
       const addressSnapshot = await getDocs(addressesCol);
@@ -106,6 +101,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   const syncAndFetchFullProfile = async (firebaseUser: FirebaseUser) => {
+    if (!db) return;
     try {
       const userRef = doc(db, 'users', firebaseUser.uid);
       const userSnap = await getDoc(userRef);
@@ -139,12 +135,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   useEffect(() => {
-    if (!firebaseAuth) {
+    if (!auth) {
       setLoading(false);
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser({
           name: firebaseUser.displayName || "Almarky User",
@@ -165,10 +161,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
-    if (!firebaseAuth) return { success: false, error: "Firebase not initialized." };
+    if (!auth) return { success: false, error: "Firebase not initialized." };
     setLoading(true);
     try {
-      await signInWithPopup(firebaseAuth, googleProvider);
+      await signInWithPopup(auth, googleProvider);
       return { success: true };
     } catch (error: any) {
       console.error("Login Error:", error);
@@ -179,9 +175,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
-    if (!firebaseAuth) return;
+    if (!auth) return;
     try {
-      await signOut(firebaseAuth);
+      await signOut(auth);
       setUser(null);
       setAddresses([]);
     } catch (error) {
@@ -190,6 +186,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const updateUserProfile = async (uid: string, data: { name?: string; phone?: string }) => {
+    if (!db) return { success: false, error: "Database offline" };
     try {
       const userRef = doc(db, 'users', uid);
       await updateDoc(userRef, data);
@@ -201,6 +198,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const updateUserPhoto = async (uid: string, file: File) => {
+    if (!db || !storage) return { success: false, error: "Storage offline" };
     try {
       const storageRef = ref(storage, `profile_pictures/${uid}/${Date.now()}_${file.name}`);
       await uploadBytes(storageRef, file);
@@ -217,6 +215,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   const setDefaultAddress = async (uid: string, newDefaultId: string) => {
+    if (!db) return { success: false, error: "DB offline" };
     try {
       const batch = writeBatch(db);
       const addressesRef = collection(db, 'users', uid, 'addresses');
@@ -239,6 +238,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const addAddress = async (uid: string, addressData: Omit<Address, 'id'>) => {
+    if (!db) return { success: false, error: "DB offline" };
     try {
       if (addressData.isDefault && addresses.some(a => a.isDefault)) {
         await setDefaultAddress(uid, '');
@@ -252,6 +252,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const updateAddress = async (uid: string, addressId: string, addressData: Partial<Omit<Address, 'id'>>) => {
+    if (!db) return { success: false, error: "DB offline" };
     try {
       if (addressData.isDefault) { await setDefaultAddress(uid, addressId); }
       const addressRef = doc(db, 'users', uid, 'addresses', addressId);
@@ -262,6 +263,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteAddress = async (uid: string, addressId: string) => {
+    if (!db) return { success: false, error: "DB offline" };
     try {
       await deleteDoc(doc(db, 'users', uid, 'addresses', addressId));
       await fetchAddresses(uid);
