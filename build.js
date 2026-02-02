@@ -4,7 +4,6 @@ import path from 'path';
 
 const outdir = 'dist';
 
-// Define all environment variables that the application uses
 const define = {
   'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
 };
@@ -33,12 +32,9 @@ for (const v of envVars) {
 async function build() {
   console.log('Starting Almarky production build...');
   
-  // 1. Clean and create output directory
   await fs.rm(outdir, { recursive: true, force: true });
   await fs.mkdir(outdir, { recursive: true });
-  console.log(`Output directory '${outdir}' created.`);
 
-  // 2. Bundle TypeScript/TSX to a single minified JS file
   console.log('Bundling application with esbuild...');
   await esbuild.build({
     entryPoints: ['index.tsx'],
@@ -50,6 +46,7 @@ async function build() {
       '.tsx': 'tsx',
       '.ts': 'ts' 
     },
+    resolveExtensions: ['.tsx', '.ts', '.jsx', '.js'],
     tsconfig: 'tsconfig.json',
     minify: true,
     sourcemap: true,
@@ -58,20 +55,13 @@ async function build() {
     mainFields: ['module', 'main'],
     platform: 'browser',
   });
-  console.log('JavaScript bundling complete.');
-
-  // 3. Copy index.html and ensure it points to the bundled script
-  console.log('Processing index.html for production...');
-  let html = await fs.readFile('index.html', 'utf-8');
   
-  // Ensure the script tag points to index.js which is the bundled output
+  let html = await fs.readFile('index.html', 'utf-8');
   html = html.replace(/src="index\.tsx"/g, 'src="index.js"');
   html = html.replace(/src="\/index\.tsx"/g, 'src="index.js"');
   
   await fs.writeFile(path.join(outdir, 'index.html'), html);
-  console.log('index.html processed.');
-  
-  console.log('Build finished successfully! Ready for deployment.');
+  console.log('Build finished successfully!');
 }
 
 build().catch((e) => {
