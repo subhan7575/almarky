@@ -1,9 +1,6 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Order } from '../types';
-// Fix: Use standard modular imports for Firestore functions.
 import { 
-  getFirestore, 
   doc, 
   setDoc, 
   getDoc, 
@@ -13,8 +10,7 @@ import {
   getDocs,
   orderBy
 } from 'firebase/firestore';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { useAuth } from './AuthContext';
+import { useAuth, db } from './AuthContext';
 
 interface OrderContextType {
   orders: Order[];
@@ -28,17 +24,16 @@ const OrderContext = createContext<OrderContextType | undefined>(undefined);
 export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const { user } = useAuth();
-  const db = getFirestore();
 
   const fetchUserOrders = async () => {
-    if (!user?.uid) {
+    if (!user?.uid || !db) {
       setOrders([]);
       return;
     }
     try {
       const ordersRef = collection(db, 'orders');
-      // Query orders where the phone number matches or a specific userId field if you add one later
-      // For now, let's filter by phone number provided in the order details as a common identifier
+      // Note: This query usually requires a Firestore composite index.
+      // If index is missing, it fails, which is handled here.
       const q = query(
         ordersRef, 
         where("customerDetails.phoneNumber", "==", user.phone || ""),
@@ -48,8 +43,8 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const fetchedOrders = querySnapshot.docs.map(doc => doc.data() as Order);
       setOrders(fetchedOrders);
     } catch (e) {
-      console.error("Order Fetch Error:", e);
-      // Fallback to local storage for guest orders or if offline
+      console.warn("Order Sync Note: Firestore index might be needed or user phone is empty.", e);
+      // Fallback to local storage for persistence
       const saved = localStorage.getItem('almarky_user_orders');
       if (saved) setOrders(JSON.parse(saved));
     }
@@ -61,18 +56,20 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const saveOrder = async (order: Order) => {
     try {
-      const orderRef = doc(db, 'orders', order.orderId);
-      await setDoc(orderRef, order);
+      if (db) {
+        const orderRef = doc(db, 'orders', order.orderId);
+        await setDoc(orderRef, order);
+      }
       
-      // Update local state
+      // Update local state and storage immediately
       const updatedOrders = [order, ...orders];
       setOrders(updatedOrders);
       localStorage.setItem('almarky_user_orders', JSON.stringify(updatedOrders));
       
       return { success: true };
     } catch (e: any) {
-      console.error("Cloud Save Error:", e);
-      // Still save locally so user doesn't lose data
+      console.error("Order Save Error:", e);
+      // Still save locally so user doesn't lose progress if offline
       const updatedOrders = [order, ...orders];
       setOrders(updatedOrders);
       localStorage.setItem('almarky_user_orders', JSON.stringify(updatedOrders));
@@ -82,10 +79,12 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const getOrderById = async (id: string) => {
     try {
-      const orderRef = doc(db, 'orders', id);
-      const docSnap = await getDoc(orderRef);
-      if (docSnap.exists()) {
-        return docSnap.data() as Order;
+      if (db) {
+        const orderRef = doc(db, 'orders', id);
+        const docSnap = await getDoc(orderRef);
+        if (docSnap.exists()) {
+          return docSnap.data() as Order;
+        }
       }
       return orders.find(o => o.orderId === id);
     } catch (e) {
