@@ -32,39 +32,44 @@ for (const v of envVars) {
 async function build() {
   console.log('Starting Almarky production build...');
   
-  await fs.rm(outdir, { recursive: true, force: true });
-  await fs.mkdir(outdir, { recursive: true });
+  try {
+    await fs.rm(outdir, { recursive: true, force: true });
+    await fs.mkdir(outdir, { recursive: true });
 
-  console.log('Bundling application with esbuild...');
-  await esbuild.build({
-    entryPoints: ['index.tsx'],
-    bundle: true,
-    outfile: path.join(outdir, 'index.js'),
-    format: 'esm',
-    jsx: 'automatic',
-    loader: { 
-      '.tsx': 'tsx',
-      '.ts': 'ts' 
-    },
-    resolveExtensions: ['.tsx', '.ts', '.jsx', '.js'],
-    tsconfig: 'tsconfig.json',
-    minify: true,
-    sourcemap: true,
-    target: 'es2020',
-    define,
-    mainFields: ['module', 'main'],
-    platform: 'browser',
-  });
-  
-  let html = await fs.readFile('index.html', 'utf-8');
-  html = html.replace(/src="index\.tsx"/g, 'src="index.js"');
-  html = html.replace(/src="\/index\.tsx"/g, 'src="index.js"');
-  
-  await fs.writeFile(path.join(outdir, 'index.html'), html);
-  console.log('Build finished successfully!');
+    console.log('Bundling application with esbuild...');
+    await esbuild.build({
+      entryPoints: ['index.tsx'],
+      bundle: true,
+      outfile: path.join(outdir, 'index.js'),
+      format: 'esm',
+      jsx: 'automatic',
+      loader: { 
+        '.tsx': 'tsx',
+        '.ts': 'ts',
+        '.js': 'js',
+        '.jsx': 'jsx'
+      },
+      // Important: prioritize .tsx and .ts for resolution
+      resolveExtensions: ['.tsx', '.ts', '.jsx', '.js'],
+      tsconfig: 'tsconfig.json',
+      minify: true,
+      sourcemap: true,
+      target: 'es2020',
+      define,
+      platform: 'browser',
+      mainFields: ['module', 'main'],
+    });
+    
+    let html = await fs.readFile('index.html', 'utf-8');
+    html = html.replace(/src="index\.tsx"/g, 'src="index.js"');
+    html = html.replace(/src="\/index\.tsx"/g, 'src="index.js"');
+    
+    await fs.writeFile(path.join(outdir, 'index.html'), html);
+    console.log('Build finished successfully!');
+  } catch (err) {
+    console.error('Build process failed:', err);
+    process.exit(1);
+  }
 }
 
-build().catch((e) => {
-  console.error('Build failed:', e);
-  process.exit(1);
-});
+build();
