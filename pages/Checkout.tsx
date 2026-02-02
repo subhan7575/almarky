@@ -5,7 +5,7 @@ import { useOrders } from '../context/OrderContext';
 import { getGoogleScriptUrl } from '../utils/security';
 
 const Checkout: React.FC = () => {
-  const { cart, totalProductPrice, totalDeliveryPrice, totalPayable, clearCart } = useCart();
+  const { cart, totalPayable, clearCart } = useCart();
   const { saveOrder } = useOrders();
   const navigate = useNavigate();
   
@@ -23,22 +23,54 @@ const Checkout: React.FC = () => {
     setLoading(true);
     const orderId = `ALM-${Math.floor(10000 + Math.random() * 90000)}`;
     const scriptUrl = getGoogleScriptUrl();
+    
     const payload = {
       orderId,
       timestamp: new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }),
-      customerName: formData.name, phone: formData.phone, city: formData.city, address: formData.address,
-      totalAmount: totalPayable, itemSummary: cart.map(item => `${item.name} (${item.quantity}x)`).join(', ')
+      customerName: formData.name, 
+      phone: formData.phone, 
+      city: formData.city, 
+      address: formData.address,
+      totalAmount: totalPayable, 
+      itemSummary: cart.map(item => `${item.name} (${item.quantity}x${item.selectedColor ? ` - ${item.selectedColor}` : ''})`).join(', ')
     };
 
     try {
-      await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
-      saveOrder({
-        orderId, timestamp: Date.now(), items: [...cart], totalAmount: totalPayable, status: 'Pending',
-        customerDetails: { customerName: formData.name, phoneNumber: formData.phone, address: formData.address, city: formData.city }
+      // 1. Log to Cloud Database (Primary for App State)
+      const cloudResult = await saveOrder({
+        orderId, 
+        timestamp: Date.now(), 
+        items: [...cart], 
+        totalAmount: totalPayable, 
+        status: 'Pending',
+        customerDetails: { 
+          customerName: formData.name, 
+          phoneNumber: formData.phone, 
+          address: formData.address, 
+          city: formData.city,
+          notes: formData.notes
+        }
       });
+
+      if (!cloudResult.success) {
+        console.warn("Cloud sync deferred. Order stored locally.");
+      }
+
+      // 2. Log to Google Sheets (Logistics)
+      if (scriptUrl) {
+        // Run this in background to not block user
+        fetch(scriptUrl, { 
+          method: 'POST', 
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload) 
+        }).catch(err => console.error("Logistics Sheet Sync Error:", err));
+      }
+      
       clearCart();
-      setTimeout(() => navigate('/success'), 800);
+      setTimeout(() => navigate(`/success?id=${orderId}`), 500);
     } catch (err) {
+      console.error("Critical Order Execution Error:", err);
       navigate('/success');
     } finally {
       setLoading(false);
@@ -48,18 +80,17 @@ const Checkout: React.FC = () => {
   if (cart.length === 0) { navigate('/cart'); return null; }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 pb-24 md:pb-16 bg-white">
+    <div className="max-w-4xl mx-auto px-4 py-8 pb-24 md:pb-16 bg-white min-h-[60vh]">
       <div className="mb-8 border-b border-slate-50 pb-4">
         <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Shipping <span className="text-blue-600">Info</span></h1>
         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Direct Cash on Delivery Checkout</p>
       </div>
 
       <div className="space-y-8">
-        {/* Order Preview Mini */}
         <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
            <div className="flex justify-between items-center mb-2">
-             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Order Total</span>
-             <span className="text-sm font-black text-blue-600 tracking-tighter">Rs.{totalPayable}</span>
+             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Order Total (COD)</span>
+             <span className="text-sm font-black text-blue-600 tracking-tighter">Rs.{totalPayable.toLocaleString()}</span>
            </div>
            <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest italic">{cart.length} item(s) selected</p>
         </div>
@@ -90,12 +121,22 @@ const Checkout: React.FC = () => {
             </div>
           </div>
 
+          <div>
+             <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Order Notes (Optional)</label>
+             <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Any specific delivery instructions?" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 shadow-sm h-24" />
+          </div>
+
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active-press disabled:opacity-50 uppercase tracking-[0.3em] text-[10px] mt-4"
+            className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active-press disabled:opacity-50 uppercase tracking-[0.3em] text-[10px] mt-4 flex items-center justify-center space-x-3"
           >
-            {loading ? "Processing Order..." : "Confirm My Order (COD)"}
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                <span>Securing Order...</span>
+              </>
+            ) : "Confirm My Order (COD)"}
           </button>
         </form>
       </div>
