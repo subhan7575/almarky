@@ -1,7 +1,6 @@
 /**
  * Almarky Security Vault
  * SENSITIVE CREDENTIALS MANAGED VIA ENVIRONMENT VARIABLES.
- * Deployment Note: Set these in your Vercel/GitHub Settings -> Environment Variables.
  */
 
 // GitHub Data Engine (Inventory Sync)
@@ -15,13 +14,10 @@ export const getCloudinaryDefaults = () => ({
   uploadPreset: (process.env.CLOUDINARY_UPLOAD_PRESET || "").trim()
 });
 
-// Google Sheets Automation (Order Logging)
-export const getGoogleScriptUrl = (): string => (process.env.GOOGLE_SCRIPT_URL || "").trim();
-
 // Gemini AI Key
 export const getGeminiKey = (): string => (process.env.API_KEY || "").trim();
 
-// Firebase Specific Key (Falling back to API_KEY if not specified)
+// Firebase Specific Key
 export const getFirebaseKey = (): string => (process.env.FIREBASE_API_KEY || process.env.API_KEY || "").trim();
 
 // Admin Dashboard Gatekeeper
@@ -34,12 +30,11 @@ export const isCloudSyncReady = (): boolean => {
   const token = getSecureToken();
   const repo = getSecureRepo();
   const cld = getCloudinaryDefaults();
-  const script = getGoogleScriptUrl();
   const api = getGeminiKey();
   const fbKey = process.env.FIREBASE_API_KEY;
   const fbProj = process.env.FIREBASE_PROJECT_ID;
   
-  const ready = !!(token && repo && cld.cloudName && script && api && fbKey && fbProj);
+  const ready = !!(token && repo && cld.cloudName && api && fbKey && fbProj);
   
   if (!ready && process.env.NODE_ENV !== 'production') {
     console.error("ALMARKY SECURITY ALERT: Missing Critical Env Variables. Check your FIREBASE_, GITHUB_, and API_KEY settings.");
