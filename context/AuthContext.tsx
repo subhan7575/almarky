@@ -29,13 +29,14 @@ import {
 import { getStorage, ref, uploadBytes, getDownloadURL, Storage } from 'firebase/storage';
 import { Address } from '../types';
 
+// Using environment variables provided by the user in the hosting environment
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyAQpivPdkecOb-xMmegwtT0ioEEBbzRXOA",
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "almarky-official.firebaseapp.com",
-  projectId: process.env.FIREBASE_PROJECT_ID || "almarky-official",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "almarky-official.appspot.com",
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "344943496520",
-  appId: process.env.FIREBASE_APP_ID || "1:344943496520:web:d77c828a619f3ca882b77d",
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID,
   measurementId: "G-RTW87LBFP4"
 };
 
@@ -64,11 +65,21 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const firebaseApp: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const analytics = getAnalytics(firebaseApp);
-const firebaseAuth: Auth = getAuth(firebaseApp);
-const db: Firestore = getFirestore(firebaseApp);
-const storage: Storage = getStorage(firebaseApp);
+// Initialize Firebase only if config is present
+let firebaseApp: FirebaseApp;
+let firebaseAuth: Auth;
+let db: Firestore;
+let storage: Storage;
+
+try {
+  firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  firebaseAuth = getAuth(firebaseApp);
+  db = getFirestore(firebaseApp);
+  storage = getStorage(firebaseApp);
+} catch (error) {
+  console.error("Firebase Initialization Error: Ensure all FIREBASE_ environment variables are set.", error);
+}
+
 const googleProvider = new GoogleAuthProvider();
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -98,6 +109,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(prevUser => ({
           ...(prevUser as User),
           ...dbUser,
+          isLoggedIn: true
         }));
         await updateDoc(userRef, { lastLogin: serverTimestamp() });
       } else {
@@ -121,6 +133,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   useEffect(() => {
+    if (!firebaseAuth) {
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser({
@@ -142,6 +159,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!firebaseAuth) return { success: false, error: "Firebase not initialized." };
     setLoading(true);
     try {
       await signInWithPopup(firebaseAuth, googleProvider);
@@ -155,6 +173,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
+    if (!firebaseAuth) return;
     try {
       await signOut(firebaseAuth);
       setUser(null);
