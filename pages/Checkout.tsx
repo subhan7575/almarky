@@ -52,29 +52,28 @@ const Checkout: React.FC = () => {
     };
 
     try {
-      // 1. IMMEDIATE LOCAL PERSISTENCE
-      // This is fast and shouldn't fail.
+      // 1. PHASE 1: OPTIMISTIC LOCAL SAVE (Instant)
+      // This ensures the order is recorded in the user's browser immediately.
       await saveOrder(orderData);
 
-      // 2. BACKGROUND LOGISTICS SYNC (NON-BLOCKING)
-      // Fire and forget. If it takes 10 seconds or fails, the user is already on the success page.
+      // 2. PHASE 2: SILENT BACKGROUND SYNC (Non-Blocking)
+      // This fires the network requests without making the user wait for the response.
       if (scriptUrl) {
         fetch(scriptUrl, { 
           method: 'POST', 
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify(sheetPayload) 
-        }).catch(err => console.warn("Google Sheets background sync failed:", err));
+        }).catch(() => {}); // Intentionally silent
       }
 
-      // 3. OPTIMISTIC REDIRECT
-      // Clear cart and go to success page immediately.
+      // 3. PHASE 3: INSTANT REDIRECT
+      // User experience is prioritized. We clear the cart and move to success.
       clearCart();
-      setLoading(false);
       navigate(`/success?id=${orderId}`);
     } catch (err: any) {
-      console.error("Critical Checkout Error:", err);
-      setError("System error. Please take a screenshot of your cart and contact WhatsApp support.");
+      console.error("Order process failure:", err);
+      setError("System temporary glitch. Please screenshot your cart and contact WhatsApp!");
       setLoading(false);
       window.scrollTo(0, 0);
     }
@@ -111,7 +110,7 @@ const Checkout: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Your Name</label>
-              <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} type="text" placeholder="Full Name" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 focus:bg-white transition-all font-bold text-slate-900 shadow-sm" />
+              <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} type="text" placeholder="Full Name" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-900 shadow-sm" />
             </div>
             <div>
               <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Phone Number</label>
