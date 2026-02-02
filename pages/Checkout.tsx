@@ -16,7 +16,6 @@ const Checkout: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validation
     if (!/^03\d{9}$/.test(formData.phone)) {
       setError('Invalid phone number (e.g. 03271452389)');
       return;
@@ -26,7 +25,22 @@ const Checkout: React.FC = () => {
     const orderId = `ALM-${Math.floor(10000 + Math.random() * 90000)}`;
     const scriptUrl = getGoogleScriptUrl();
     
-    const payload = {
+    const orderData = {
+      orderId, 
+      timestamp: Date.now(), 
+      items: [...cart], 
+      totalAmount: totalPayable, 
+      status: 'Pending' as const,
+      customerDetails: { 
+        customerName: formData.name, 
+        phoneNumber: formData.phone, 
+        address: formData.address, 
+        city: formData.city,
+        notes: formData.notes
+      }
+    };
+
+    const sheetPayload = {
       orderId,
       timestamp: new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }),
       customerName: formData.name, 
@@ -38,44 +52,29 @@ const Checkout: React.FC = () => {
     };
 
     try {
-      // 1. Primary Operation: Save to Firestore/Local History
-      // We await this to ensure we have a record.
-      const result = await saveOrder({
-        orderId, 
-        timestamp: Date.now(), 
-        items: [...cart], 
-        totalAmount: totalPayable, 
-        status: 'Pending',
-        customerDetails: { 
-          customerName: formData.name, 
-          phoneNumber: formData.phone, 
-          address: formData.address, 
-          city: formData.city,
-          notes: formData.notes
-        }
-      });
+      // 1. IMMEDIATE LOCAL PERSISTENCE
+      // This is fast and shouldn't fail.
+      await saveOrder(orderData);
 
-      // 2. Background Operation: Google Sheets Logistics Sync
-      // We don't await this so it doesn't block the user if the script is slow.
+      // 2. BACKGROUND LOGISTICS SYNC (NON-BLOCKING)
+      // Fire and forget. If it takes 10 seconds or fails, the user is already on the success page.
       if (scriptUrl) {
         fetch(scriptUrl, { 
           method: 'POST', 
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(payload) 
-        }).catch(err => console.error("Logistics Sync Failed:", err));
+          body: JSON.stringify(sheetPayload) 
+        }).catch(err => console.warn("Google Sheets background sync failed:", err));
       }
-      
-      // Clear cart and redirect
-      clearCart();
-      setTimeout(() => {
-        setLoading(false);
-        navigate(`/success?id=${orderId}`);
-      }, 800);
 
+      // 3. OPTIMISTIC REDIRECT
+      // Clear cart and go to success page immediately.
+      clearCart();
+      setLoading(false);
+      navigate(`/success?id=${orderId}`);
     } catch (err: any) {
-      console.error("Checkout Process Error:", err);
-      setError("Unable to process order. Please try again or contact support on WhatsApp.");
+      console.error("Critical Checkout Error:", err);
+      setError("System error. Please take a screenshot of your cart and contact WhatsApp support.");
       setLoading(false);
       window.scrollTo(0, 0);
     }
@@ -112,7 +111,7 @@ const Checkout: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Your Name</label>
-              <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} type="text" placeholder="Full Name" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 focus:bg-white shadow-sm" />
+              <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} type="text" placeholder="Full Name" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 focus:bg-white transition-all font-bold text-slate-900 shadow-sm" />
             </div>
             <div>
               <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Phone Number</label>
