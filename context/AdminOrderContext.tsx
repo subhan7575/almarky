@@ -1,5 +1,7 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Order } from '../types';
+// Fix: Use standard modular imports for Firestore functions.
 import { 
   getFirestore, 
   collection, 
