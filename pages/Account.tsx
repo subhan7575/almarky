@@ -5,7 +5,7 @@ import ProfileOverview from '../components/account/ProfileOverview';
 import AddressBook from '../components/account/AddressBook';
 import MyOrders from './MyOrders';
 import ProfileSettings from '../components/account/ProfileSettings';
-import Spinner from '../components/ui/Spinner';
+
 
 type Tab = 'overview' | 'orders' | 'addresses' | 'settings';
 
