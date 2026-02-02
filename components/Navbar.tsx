@@ -1,17 +1,23 @@
-
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import AlmarkyFullLogo from './AlmarkyFullLogo';
 
 // Official brand logo component using the new FULL vector logo
-export const AlmarkyLogo: React.FC<{ className?: string }> = ({ className = "h-10 w-auto" }) => (
-  <AlmarkyFullLogo className={className} />
+export const AlmarkyLogo: React.FC<{ className?: string, onDoubleClick?: () => void }> = ({ className = "h-10 w-auto", onDoubleClick }) => (
+  <div onDoubleClick={onDoubleClick} className="cursor-pointer">
+    <AlmarkyFullLogo className={className} />
+  </div>
 );
 
 const Navbar: React.FC = () => {
   const { totalItems } = useCart();
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const handleAdminTrigger = () => {
+    navigate('/almarky-internal-v2026');
+  };
 
   return (
     <nav className="bg-white border-b border-slate-50 sticky top-0 z-50 h-16 flex items-center shadow-sm">
@@ -19,7 +25,7 @@ const Navbar: React.FC = () => {
         {/* Left Side: Logo & Desktop Nav */}
         <div className="flex items-center space-x-10">
           <Link to="/" className="flex items-center active-press flex-shrink-0">
-            <AlmarkyLogo />
+            <AlmarkyLogo onDoubleClick={handleAdminTrigger} />
           </Link>
 
           <div className="hidden md:flex items-center space-x-8">
