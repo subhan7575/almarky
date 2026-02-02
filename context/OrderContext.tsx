@@ -26,14 +26,13 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const { user } = useAuth();
 
   const fetchUserOrders = async () => {
-    if (!user?.uid || !db) {
-      setOrders([]);
-      return;
-    }
+    const saved = localStorage.getItem('almarky_user_orders');
+    if (saved) setOrders(JSON.parse(saved));
+
+    if (!user?.uid || !db) return;
+    
     try {
       const ordersRef = collection(db, 'orders');
-      // Note: This query usually requires a Firestore composite index.
-      // If index is missing, it fails, which is handled here.
       const q = query(
         ordersRef, 
         where("customerDetails.phoneNumber", "==", user.phone || ""),
@@ -41,12 +40,12 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       );
       const querySnapshot = await getDocs(q);
       const fetchedOrders = querySnapshot.docs.map(doc => doc.data() as Order);
-      setOrders(fetchedOrders);
+      if (fetchedOrders.length > 0) {
+        setOrders(fetchedOrders);
+        localStorage.setItem('almarky_user_orders', JSON.stringify(fetchedOrders));
+      }
     } catch (e) {
-      console.warn("Order Sync Note: Firestore index might be needed or user phone is empty.", e);
-      // Fallback to local storage for persistence
-      const saved = localStorage.getItem('almarky_user_orders');
-      if (saved) setOrders(JSON.parse(saved));
+      console.warn("Firestore order fetch failed, using local vault.");
     }
   };
 
@@ -55,41 +54,33 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [user]);
 
   const saveOrder = async (order: Order) => {
-    try {
-      if (db) {
-        const orderRef = doc(db, 'orders', order.orderId);
-        await setDoc(orderRef, order);
-      }
-      
-      // Update local state and storage immediately
-      const updatedOrders = [order, ...orders];
-      setOrders(updatedOrders);
-      localStorage.setItem('almarky_user_orders', JSON.stringify(updatedOrders));
-      
-      return { success: true };
-    } catch (e: any) {
-      console.error("Order Save Error:", e);
-      // Still save locally so user doesn't lose progress if offline
-      const updatedOrders = [order, ...orders];
-      setOrders(updatedOrders);
-      localStorage.setItem('almarky_user_orders', JSON.stringify(updatedOrders));
-      return { success: false, error: e.message };
+    // 1. Update local storage instantly
+    const currentOrders = JSON.parse(localStorage.getItem('almarky_user_orders') || '[]');
+    const updatedOrders = [order, ...currentOrders];
+    localStorage.setItem('almarky_user_orders', JSON.stringify(updatedOrders));
+    setOrders(updatedOrders);
+    
+    // 2. Sync to Firestore in background (non-blocking)
+    if (db) {
+      const orderRef = doc(db, 'orders', order.orderId);
+      setDoc(orderRef, order).catch(err => console.error("Firestore sync background failed:", err));
     }
+    
+    return { success: true };
   };
 
   const getOrderById = async (id: string) => {
+    const local = orders.find(o => o.orderId === id);
+    if (local) return local;
+
     try {
       if (db) {
         const orderRef = doc(db, 'orders', id);
         const docSnap = await getDoc(orderRef);
-        if (docSnap.exists()) {
-          return docSnap.data() as Order;
-        }
+        if (docSnap.exists()) return docSnap.data() as Order;
       }
-      return orders.find(o => o.orderId === id);
-    } catch (e) {
-      return orders.find(o => o.orderId === id);
-    }
+    } catch (e) {}
+    return undefined;
   };
 
   return (
