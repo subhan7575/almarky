@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Product } from '../types';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import Modal from './ui/Modal.tsx';
+import Modal from './ui/Modal';
 
 interface QuickSelectProps {
   product: Product;
