@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Address } from '../../types';
-import Modal from '../ui/Modal';
+import Modal from '../ui/Modal.tsx';
 
 interface AddressFormProps {
   initialData?: Address | null;
