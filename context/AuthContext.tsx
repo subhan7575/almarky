@@ -1,32 +1,38 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+// Fix: Import types separately to resolve resolution issues in certain environments.
+import type { FirebaseApp } from 'firebase/app';
 import { getAnalytics } from "firebase/analytics";
 import { 
   getAuth, 
   GoogleAuthProvider, 
   signInWithPopup, 
   signOut, 
-  onAuthStateChanged,
-  User as FirebaseUser,
-  Auth
+  onAuthStateChanged
 } from 'firebase/auth';
+// Fix: Use import type for Firebase interfaces.
+import type { User as FirebaseUser, Auth } from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
   setDoc, 
-  getDoc,
+  getDoc, 
   serverTimestamp, 
-  Firestore,
-  updateDoc,
-  collection,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  writeBatch,
-  query,
-  where,
+  updateDoc, 
+  collection, 
+  getDocs, 
+  addDoc, 
+  deleteDoc, 
+  writeBatch, 
+  query, 
+  where 
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL, Storage } from 'firebase/storage';
+// Fix: Use import type for Firestore interface.
+import type { Firestore } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// Fix: Correct type name from Storage to FirebaseStorage to avoid conflict with global browser Storage.
+import type { FirebaseStorage } from 'firebase/storage';
 import { Address } from '../types';
 
 // Using environment variables provided by the user in the hosting environment
@@ -69,7 +75,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 let firebaseApp: FirebaseApp;
 let firebaseAuth: Auth;
 let db: Firestore;
-let storage: Storage;
+let storage: FirebaseStorage;
 
 try {
   firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
