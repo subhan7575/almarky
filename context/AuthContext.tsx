@@ -75,13 +75,16 @@ try {
   db = getFirestore(firebaseApp);
   storage = getStorage(firebaseApp);
 } catch (error) {
-  console.error("Firebase Initialization Error:", error);
+  console.error("Firebase Critical Error:", error);
 }
 
 const googleProvider = new GoogleAuthProvider();
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('almarky_user_cache');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [loading, setLoading] = useState(true);
   const [addresses, setAddresses] = useState<Address[]>([]);
 
@@ -97,7 +100,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
   
-  const syncAndFetchFullProfile = async (firebaseUser: FirebaseUser) => {
+  const syncProfileInBackground = async (firebaseUser: FirebaseUser) => {
     if (!db) return;
     try {
       const userRef = doc(db, 'users', firebaseUser.uid);
@@ -105,15 +108,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (userSnap.exists()) {
         const dbData = userSnap.data();
-        // Update state with any extra data from Firestore (like phone)
-        setUser({
+        const updatedUser = {
           uid: firebaseUser.uid,
           name: dbData.name || firebaseUser.displayName || "User",
           email: firebaseUser.email || "",
           photo: dbData.photo || firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
           isLoggedIn: true,
           phone: dbData.phone || ''
-        });
+        };
+        setUser(updatedUser);
+        localStorage.setItem('almarky_user_cache', JSON.stringify(updatedUser));
         updateDoc(userRef, { lastLogin: serverTimestamp() }).catch(() => {});
       } else {
         const newUserProfile = {
@@ -130,7 +134,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       fetchAddresses(firebaseUser.uid);
     } catch (error) {
-      console.error("Firestore sync error:", error);
+      console.warn("Silent profile sync failed.");
     }
   };
 
@@ -142,20 +146,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
-        // INSTANT UI UPDATE: Use Firebase Auth data directly
-        setUser({
+        const basicUser = {
           name: firebaseUser.displayName || "User",
           email: firebaseUser.email || "",
           photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
           isLoggedIn: true,
           uid: firebaseUser.uid,
           phone: '',
-        });
-        // Background heavy lifting
-        syncAndFetchFullProfile(firebaseUser);
+        };
+        setUser(prev => prev?.uid === basicUser.uid ? prev : basicUser);
+        syncProfileInBackground(firebaseUser);
       } else {
         setUser(null);
         setAddresses([]);
+        localStorage.removeItem('almarky_user_cache');
       }
       setLoading(false);
     });
@@ -163,9 +167,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
-    if (!auth) return { success: false, error: "Firebase not initialized." };
+    if (!auth) return { success: false, error: "Firebase offline." };
     try {
-      // Don't await the full process for state; the listener handles the redirect/UI update
       await signInWithPopup(auth, googleProvider);
       return { success: true };
     } catch (error: any) {
