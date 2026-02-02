@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import type { FirebaseApp } from 'firebase/app';
-import { getAnalytics } from "firebase/analytics";
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -65,7 +64,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Initialize Firebase only once
 let firebaseApp: FirebaseApp;
 export let auth: Auth;
 export let db: Firestore;
@@ -95,7 +93,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const userAddresses = addressSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Address));
       setAddresses(userAddresses.sort((a, b) => (b.isDefault ? 1 : -1) - (a.isDefault ? 1 : -1)));
     } catch (e) {
-      console.error("Failed to fetch addresses:", e);
       setAddresses([]);
     }
   };
@@ -107,13 +104,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const userSnap = await getDoc(userRef);
 
       if (userSnap.exists()) {
-        const dbUser = userSnap.data();
-        setUser(prevUser => ({
-          ...(prevUser as User),
-          ...dbUser,
-          isLoggedIn: true
-        }));
-        await updateDoc(userRef, { lastLogin: serverTimestamp() });
+        const dbData = userSnap.data();
+        // Update state with any extra data from Firestore (like phone)
+        setUser({
+          uid: firebaseUser.uid,
+          name: dbData.name || firebaseUser.displayName || "User",
+          email: firebaseUser.email || "",
+          photo: dbData.photo || firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
+          isLoggedIn: true,
+          phone: dbData.phone || ''
+        });
+        updateDoc(userRef, { lastLogin: serverTimestamp() }).catch(() => {});
       } else {
         const newUserProfile = {
           uid: firebaseUser.uid,
@@ -126,11 +127,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           phone: ''
         };
         await setDoc(userRef, newUserProfile);
-        setUser({ ...newUserProfile, isLoggedIn: true } as unknown as User);
       }
-      await fetchAddresses(firebaseUser.uid);
+      fetchAddresses(firebaseUser.uid);
     } catch (error) {
-      console.error("Firestore sync failed:", error);
+      console.error("Firestore sync error:", error);
     }
   };
 
@@ -140,17 +140,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
+        // INSTANT UI UPDATE: Use Firebase Auth data directly
         setUser({
-          name: firebaseUser.displayName || "Almarky User",
+          name: firebaseUser.displayName || "User",
           email: firebaseUser.email || "",
           photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
           isLoggedIn: true,
           uid: firebaseUser.uid,
           phone: '',
         });
-        await syncAndFetchFullProfile(firebaseUser);
+        // Background heavy lifting
+        syncAndFetchFullProfile(firebaseUser);
       } else {
         setUser(null);
         setAddresses([]);
@@ -162,15 +164,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
     if (!auth) return { success: false, error: "Firebase not initialized." };
-    setLoading(true);
     try {
+      // Don't await the full process for state; the listener handles the redirect/UI update
       await signInWithPopup(auth, googleProvider);
       return { success: true };
     } catch (error: any) {
-      console.error("Login Error:", error);
-      return { success: false, error: error.message || "An unknown error occurred." };
-    } finally {
-      setLoading(false);
+      return { success: false, error: error.message };
     }
   };
 
@@ -203,10 +202,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const storageRef = ref(storage, `profile_pictures/${uid}/${Date.now()}_${file.name}`);
       await uploadBytes(storageRef, file);
       const photoURL = await getDownloadURL(storageRef);
-
       const userDocRef = doc(db, 'users', uid);
       await updateDoc(userDocRef, { photo: photoURL });
-
       setUser(prevUser => prevUser ? { ...prevUser, photo: photoURL } : null);
       return { success: true };
     } catch (error: any) {
@@ -221,18 +218,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const addressesRef = collection(db, 'users', uid, 'addresses');
       const q = query(addressesRef, where("isDefault", "==", true));
       const querySnapshot = await getDocs(q);
-      
       querySnapshot.forEach((doc) => {
         if (doc.id !== newDefaultId) batch.update(doc.ref, { isDefault: false });
       });
-      
       if (newDefaultId) {
         const newDefaultRef = doc(addressesRef, newDefaultId);
         batch.update(newDefaultRef, { isDefault: true });
       }
-
       await batch.commit();
-      await fetchAddresses(uid);
+      fetchAddresses(uid);
       return { success: true };
     } catch (e: any) { return { success: false, error: e.message }; }
   };
@@ -240,13 +234,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const addAddress = async (uid: string, addressData: Omit<Address, 'id'>) => {
     if (!db) return { success: false, error: "DB offline" };
     try {
-      if (addressData.isDefault && addresses.some(a => a.isDefault)) {
-        await setDefaultAddress(uid, '');
-      }
+      if (addressData.isDefault) await setDefaultAddress(uid, '');
       const addressesCol = collection(db, 'users', uid, 'addresses');
       const newDocRef = await addDoc(addressesCol, addressData);
-      if (addressData.isDefault) { await setDefaultAddress(uid, newDocRef.id); }
-      await fetchAddresses(uid);
+      if (addressData.isDefault) await setDefaultAddress(uid, newDocRef.id);
+      fetchAddresses(uid);
       return { success: true };
     } catch (e: any) { return { success: false, error: e.message }; }
   };
@@ -254,10 +246,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateAddress = async (uid: string, addressId: string, addressData: Partial<Omit<Address, 'id'>>) => {
     if (!db) return { success: false, error: "DB offline" };
     try {
-      if (addressData.isDefault) { await setDefaultAddress(uid, addressId); }
+      if (addressData.isDefault) await setDefaultAddress(uid, addressId);
       const addressRef = doc(db, 'users', uid, 'addresses', addressId);
       await updateDoc(addressRef, addressData);
-      await fetchAddresses(uid);
+      fetchAddresses(uid);
       return { success: true };
     } catch (e: any) { return { success: false, error: e.message }; }
   };
@@ -266,7 +258,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!db) return { success: false, error: "DB offline" };
     try {
       await deleteDoc(doc(db, 'users', uid, 'addresses', addressId));
-      await fetchAddresses(uid);
+      fetchAddresses(uid);
       return { success: true };
     } catch (e: any) { return { success: false, error: e.message }; }
   };
