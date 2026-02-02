@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useOrders } from '../context/OrderContext';
 import { Order } from '../types';
-import Spinner from '../components/ui/Spinner';
+
 
 const TrackOrder: React.FC = () => {
   const { getOrderById } = useOrders();
