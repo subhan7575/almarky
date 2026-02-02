@@ -15,7 +15,7 @@ const AccountPage: React.FC = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
 
   const handleLogin = async () => {
-    setLoginError(null); // Clear previous errors
+    setLoginError(null);
     const result = await loginWithGoogle();
     if (!result.success && result.error) {
       if (result.error.includes('identitytoolkit')) {
