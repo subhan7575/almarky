@@ -4,8 +4,8 @@ import { useCart } from '../context/CartContext';
 import AlmarkyFullLogo from './AlmarkyFullLogo';
 
 // Official brand logo component using the new FULL vector logo
-export const AlmarkyLogo: React.FC<{ className?: string, onDoubleClick?: () => void }> = ({ className = "h-10 w-auto", onDoubleClick }) => (
-  <div onDoubleClick={onDoubleClick} className="cursor-pointer">
+export const AlmarkyLogo: React.FC<{ className?: string, onDoubleClick?: (e: React.MouseEvent) => void }> = ({ className = "h-10 w-auto", onDoubleClick }) => (
+  <div onDoubleClick={onDoubleClick} className="cursor-pointer select-none">
     <AlmarkyFullLogo className={className} />
   </div>
 );
@@ -15,7 +15,10 @@ const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
 
-  const handleAdminTrigger = () => {
+  const handleAdminTrigger = (e: React.MouseEvent) => {
+    // Prevent the Link's default click behavior from firing if we are double clicking
+    e.preventDefault();
+    e.stopPropagation();
     navigate('/almarky-internal-v2026');
   };
 
@@ -24,9 +27,12 @@ const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto w-full px-4 flex justify-between items-center">
         {/* Left Side: Logo & Desktop Nav */}
         <div className="flex items-center space-x-10">
-          <Link to="/" className="flex items-center active-press flex-shrink-0">
-            <AlmarkyLogo onDoubleClick={handleAdminTrigger} />
-          </Link>
+          <div className="flex items-center active-press flex-shrink-0">
+            {/* Wrapped in a div instead of Link for the logo area to handle Admin/Home logic better */}
+            <div onClick={() => navigate('/')} className="cursor-pointer">
+              <AlmarkyLogo onDoubleClick={handleAdminTrigger} />
+            </div>
+          </div>
 
           <div className="hidden md:flex items-center space-x-8">
             <Link to="/shop" className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors">All Products</Link>
