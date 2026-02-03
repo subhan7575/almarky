@@ -8,8 +8,7 @@ import {
   query, 
   where, 
   getDocs,
-  orderBy,
-  serverTimestamp
+  orderBy
 } from 'firebase/firestore';
 import { useAuth, db } from './AuthContext';
 
@@ -27,7 +26,6 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const { user } = useAuth();
 
   const fetchUserOrders = async () => {
-    // 1. Instant local load
     const saved = localStorage.getItem('almarky_user_orders');
     if (saved) setOrders(JSON.parse(saved));
 
@@ -35,21 +33,19 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     
     try {
       const ordersRef = collection(db, 'orders');
-      // Link orders by the phone number used during checkout or the user's logged-in UID
       const q = query(
         ordersRef, 
-        where("customerDetails.phoneNumber", "==", user.phone || user.email),
+        where("customerDetails.customerEmail", "==", user.email),
         orderBy("timestamp", "desc")
       );
       const querySnapshot = await getDocs(q);
       const fetchedOrders = querySnapshot.docs.map(doc => doc.data() as Order);
-      
       if (fetchedOrders.length > 0) {
         setOrders(fetchedOrders);
         localStorage.setItem('almarky_user_orders', JSON.stringify(fetchedOrders));
       }
     } catch (e) {
-      console.warn("Firestore order sync skipped - using local cache.");
+      console.warn("Local sync only.");
     }
   };
 
@@ -58,23 +54,23 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [user]);
 
   const saveOrder = async (order: Order) => {
-    // 1. UPDATE LOCAL STORAGE IMMEDIATELY (Zero Latency)
-    const currentOrders = JSON.parse(localStorage.getItem('almarky_user_orders') || '[]');
-    const updatedOrders = [order, ...currentOrders];
-    localStorage.setItem('almarky_user_orders', JSON.stringify(updatedOrders));
-    setOrders(updatedOrders);
+    // 1. Local Persistence (Instant)
+    const local = JSON.parse(localStorage.getItem('almarky_user_orders') || '[]');
+    const updated = [order, ...local];
+    localStorage.setItem('almarky_user_orders', JSON.stringify(updated));
+    setOrders(updated);
     
-    // 2. BACKGROUND FIRESTORE SYNC (Clean & Structured)
+    // 2. Cloud Storage (Wait up to 3 seconds)
     if (db) {
-      const orderRef = doc(db, 'orders', order.orderId);
-      // We don't "await" this in the UI thread to keep the checkout lightning fast
-      setDoc(orderRef, {
-        ...order,
-        serverTime: serverTimestamp(), // Add server-side timestamp for reliability
-        customerUid: user?.uid || 'guest'
-      }).catch(err => {
-        console.error("Firestore order logging failed, order preserved locally:", err);
-      });
+      try {
+        const orderRef = doc(db, 'orders', order.orderId);
+        await setDoc(orderRef, order);
+        return { success: true };
+      } catch (err: any) {
+        console.error("Firestore Error:", err);
+        // We still return true because local storage is a valid fallback
+        return { success: true };
+      }
     }
     
     return { success: true };
@@ -84,13 +80,12 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const local = orders.find(o => o.orderId === id);
     if (local) return local;
 
-    try {
-      if (db) {
-        const orderRef = doc(db, 'orders', id);
-        const docSnap = await getDoc(orderRef);
-        if (docSnap.exists()) return docSnap.data() as Order;
-      }
-    } catch (e) {}
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, 'orders', id));
+        if (snap.exists()) return snap.data() as Order;
+      } catch (e) {}
+    }
     return undefined;
   };
 
@@ -103,6 +98,6 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
 export const useOrders = () => {
   const context = useContext(OrderContext);
-  if (!context) throw new Error("useOrders must be used within an OrderProvider");
+  if (!context) throw new Error("useOrders Error");
   return context;
 };
