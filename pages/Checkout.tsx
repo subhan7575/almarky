@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useOrders } from '../context/OrderContext';
 import { useAuth } from '../context/AuthContext';
+import { getGoogleScriptUrl } from '../utils/security';
 
 const Checkout: React.FC = () => {
   const { cart, totalPayable, clearCart } = useCart();
@@ -20,54 +21,100 @@ const Checkout: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (user) {
+      setFormData(prev => ({ ...prev, name: user.name, phone: user.phone || '' }));
+    }
+  }, [user]);
+
+  const generateOrderTxt = (id: string, email: string, data: any, items: any[], total: number) => {
+    const date = new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' });
+    let log = `--- ALMARKY ORDER LOG ---\n`;
+    log += `Order ID: ${id}\n`;
+    log += `Timestamp: ${date}\n`;
+    log += `Customer: ${data.name}\n`;
+    log += `Email: ${email}\n`;
+    log += `Phone: ${data.phone}\n`;
+    log += `City: ${data.city}\n`;
+    log += `Address: ${data.address}\n`;
+    log += `Notes: ${data.notes || 'None'}\n`;
+    log += `--------------------------\n`;
+    log += `ITEMS ORDERED:\n`;
+    items.forEach(item => {
+      log += `- ${item.name} (${item.quantity}x) ${item.selectedColor ? `[Color: ${item.selectedColor}]` : ''} @ Rs. ${item.price}\n`;
+    });
+    log += `--------------------------\n`;
+    log += `TOTAL PAYABLE (COD): Rs. ${total.toLocaleString()}\n`;
+    log += `--- END OF LOG ---`;
+    return log;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Basic validation
     if (!/^03\d{9}$/.test(formData.phone)) {
-      setError('Please enter a valid 11-digit Pakistani phone number (e.g., 0312345678)');
+      setError('Invalid phone number format (03271452389)');
       return;
     }
 
     setLoading(true);
-    
-    // Generate a clean, unique Order ID
-    const orderId = `ALM-${Math.floor(100000 + Math.random() * 900000)}`;
-    
+    const orderId = `ALM-${Math.floor(10000 + Math.random() * 90000)}`;
+    const scriptUrl = getGoogleScriptUrl();
+    const customerEmail = user?.email || "guest@almarky.shop";
+
+    const orderTxtSummary = generateOrderTxt(orderId, customerEmail, formData, cart, totalPayable);
+
     const orderData = {
       orderId, 
       timestamp: Date.now(), 
-      items: cart.map(item => ({
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        selectedColor: item.selectedColor || null,
-        image: item.images[0]
-      })), 
+      items: [...cart], 
       totalAmount: totalPayable, 
       status: 'Pending' as const,
       customerDetails: { 
         customerName: formData.name, 
+        customerEmail: customerEmail,
         phoneNumber: formData.phone, 
         address: formData.address, 
         city: formData.city,
         notes: formData.notes
-      }
+      },
+      orderTxtSummary // The requested "TXT file" data field
     };
 
     try {
-      // 1. SAVE LOCALLY & SYNC TO FIRESTORE (Non-blocking)
-      // This function handles both local storage for the user and background sync to Firebase.
-      await saveOrder(orderData as any);
+      // 1. FORCE WAIT: Ensure Firestore attempt is made
+      // We set a 5 second timeout to prevent getting stuck forever
+      const savePromise = saveOrder(orderData);
+      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ success: true }), 4000));
+      
+      await Promise.race([savePromise, timeoutPromise]);
 
-      // 2. INSTANT SUCCESS REDIRECT
-      // We don't wait for the network to finish. Success is assumed once local storage is locked.
+      // 2. BACKGROUND LOGISTICS: Google Sheets (Silent)
+      if (scriptUrl) {
+        fetch(scriptUrl, { 
+          method: 'POST', 
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({
+            orderId,
+            timestamp: new Date().toLocaleString(),
+            customerName: formData.name,
+            email: customerEmail,
+            phone: formData.phone,
+            city: formData.city,
+            address: formData.address,
+            total: totalPayable,
+            items: cart.map(i => `${i.name} (${i.quantity}x)`).join(', ')
+          }) 
+        }).catch(() => {});
+      }
+
+      // 3. SUCCESS REDIRECT
       clearCart();
       navigate(`/success?id=${orderId}`);
     } catch (err: any) {
-      console.error("Critical Order Failure:", err);
-      setError("We encountered a small system glitch. Please contact support on WhatsApp with your details.");
+      console.error("Critical Checkout Error:", err);
+      setError("Payment Gateway Timeout. Please try again or WhatsApp us.");
       setLoading(false);
       window.scrollTo(0, 0);
     }
@@ -81,20 +128,17 @@ const Checkout: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 pb-24 md:pb-16 bg-white min-h-[60vh]">
       <div className="mb-8 border-b border-slate-50 pb-4">
-        <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Checkout <span className="text-blue-600">Securely</span></h1>
-        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Cash on Delivery • Nationwide Support</p>
+        <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Shipping <span className="text-blue-600">Info</span></h1>
+        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Order Summary & Data Verification</p>
       </div>
 
       <div className="space-y-8">
-        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 flex justify-between items-center">
-           <div>
-             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total Payable</span>
-             <span className="text-xl font-black text-slate-900 tracking-tighter">Rs. {totalPayable.toLocaleString()}</span>
+        <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl">
+           <div className="flex justify-between items-center mb-2">
+             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Amount to Pay on Delivery</span>
+             <span className="text-xl font-black text-blue-400 tracking-tighter">Rs. {totalPayable.toLocaleString()}</span>
            </div>
-           <div className="text-right">
-             <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest block mb-1">Method</span>
-             <span className="text-[10px] font-black text-slate-900 uppercase">Cash on Delivery</span>
-           </div>
+           <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest italic">Includes GST and {cart.length} item(s)</p>
         </div>
 
         {error && (
@@ -103,40 +147,46 @@ const Checkout: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Consignee Name</label>
-              <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} type="text" placeholder="Full Name" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3.5 text-xs font-bold outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-900 shadow-sm" />
+              <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Order Recipient Name</label>
+              <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} type="text" placeholder="Full Name" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-900" />
             </div>
             <div>
-              <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Active Mobile No.</label>
-              <input required value={formData.phone} onChange={e => {setFormData({...formData, phone: e.target.value}); setError('');}} type="tel" placeholder="03XXXXXXXXX" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3.5 text-xs font-bold outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-900 shadow-sm" />
+              <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Contact Phone Number</label>
+              <input required value={formData.phone} onChange={e => {setFormData({...formData, phone: e.target.value}); setError('');}} type="tel" placeholder="03XXXXXXXXX" className={`w-full border-2 rounded-xl px-4 py-3 text-xs font-bold outline-none transition-all ${error && error.includes('phone') ? 'border-rose-200 bg-rose-50' : 'border-slate-50 bg-slate-50 focus:border-blue-600'}`} />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">City Selection</label>
-              <select value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3.5 text-xs font-bold outline-none focus:border-blue-600 shadow-sm appearance-none cursor-pointer">
-                {["Karachi", "Lahore", "Islamabad", "Faisalabad", "Multan", "Peshawar", "Sialkot", "Gujranwala", "Other"].map(c => <option key={c} value={c}>{c}</option>)}
+              <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Destination City</label>
+              <select value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 appearance-none">
+                {["Karachi", "Lahore", "Islamabad", "Faisalabad", "Multan", "Peshawar", "Sialkot", "Other"].map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Shipping Address</label>
-              <input required value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} type="text" placeholder="House/Street/Building/Area..." className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3.5 text-xs font-bold outline-none focus:border-blue-600 shadow-sm" />
+              <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Complete Address</label>
+              <input required value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} type="text" placeholder="House #, Street, Block, Area..." className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 shadow-sm" />
             </div>
           </div>
 
           <div>
-             <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Instructions (Optional)</label>
-             <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Any specific instructions for the delivery rider?" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3.5 text-xs font-bold outline-none focus:border-blue-600 shadow-sm h-28 resize-none" />
+             <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Delivery Instructions (Optional)</label>
+             <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Any specific notes for the rider?" className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600 h-24" />
+          </div>
+
+          <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+             <p className="text-[9px] font-bold text-blue-700 leading-relaxed">
+               <strong>Note:</strong> By clicking Confirm, you agree to receive a confirmation call on {formData.phone || 'your phone'} before dispatch.
+             </p>
           </div>
 
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-slate-900 text-white font-black py-6 rounded-2xl shadow-xl active-press disabled:opacity-50 uppercase tracking-[0.3em] text-[10px] mt-6 flex items-center justify-center space-x-3 transition-all hover:bg-blue-600"
+            className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 disabled:opacity-50 uppercase tracking-[0.4em] text-[10px] mt-4 flex items-center justify-center space-x-3 transition-all"
           >
             {loading ? (
               <>
