@@ -1,17 +1,17 @@
 export interface Product {
   id: string;
   name: string;
-  price: number; // Final price to be paid
-  originalPrice: number; // Strikethrough price
-  discountPercentage: number; // 0 if no discount
+  price: number; 
+  originalPrice: number; 
+  discountPercentage: number; 
   currency: string;
   category: string;
   description: string;
   images: string[];
   stock: boolean;
   features: string[];
-  colors?: string[]; // List of available colors (hex codes or names)
-  deliveryCharges: number; // Shipping fee for this specific product
+  colors?: string[]; 
+  deliveryCharges: number; 
 }
 
 export interface CartItem extends Product {
@@ -21,6 +21,7 @@ export interface CartItem extends Product {
 
 export interface OrderDetails {
   customerName: string;
+  customerEmail: string; // Added for detailed logging
   phoneNumber: string;
   address: string;
   city: string;
@@ -34,6 +35,7 @@ export interface Order {
   totalAmount: number;
   status: 'Pending' | 'Confirmed' | 'Dispatched' | 'Delivered' | 'Cancelled';
   customerDetails: OrderDetails;
+  orderTxtSummary?: string; // This stores the "TXT file" representation of the order
 }
 
 export interface Address {
@@ -45,4 +47,3 @@ export interface Address {
   city: string;
   isDefault: boolean;
 }
-
