@@ -64,6 +64,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Guaranteed Initialization
 let firebaseApp: FirebaseApp;
 export let auth: Auth;
 export let db: Firestore;
@@ -95,12 +96,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const addressSnapshot = await getDocs(addressesCol);
       const userAddresses = addressSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Address));
       setAddresses(userAddresses.sort((a, b) => (b.isDefault ? 1 : -1) - (a.isDefault ? 1 : -1)));
-    } catch (e) {
-      setAddresses([]);
-    }
+    } catch (e) {}
   };
   
-  const syncProfileInBackground = async (firebaseUser: FirebaseUser) => {
+  const syncProfile = async (firebaseUser: FirebaseUser) => {
     if (!db) return;
     try {
       const userRef = doc(db, 'users', firebaseUser.uid);
@@ -108,7 +107,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (userSnap.exists()) {
         const dbData = userSnap.data();
-        const updatedUser = {
+        const updated = {
           uid: firebaseUser.uid,
           name: dbData.name || firebaseUser.displayName || "User",
           email: firebaseUser.email || "",
@@ -116,8 +115,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           isLoggedIn: true,
           phone: dbData.phone || ''
         };
-        setUser(updatedUser);
-        localStorage.setItem('almarky_user_cache', JSON.stringify(updatedUser));
+        setUser(updated);
+        localStorage.setItem('almarky_user_cache', JSON.stringify(updated));
         updateDoc(userRef, { lastLogin: serverTimestamp() }).catch(() => {});
       } else {
         const newUserProfile = {
@@ -134,28 +133,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       fetchAddresses(firebaseUser.uid);
     } catch (error) {
-      console.warn("Silent profile sync failed.");
+      console.warn("Sync failed.");
     }
   };
 
   useEffect(() => {
-    if (!auth) {
-      setLoading(false);
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        const basicUser = {
-          name: firebaseUser.displayName || "User",
-          email: firebaseUser.email || "",
-          photo: firebaseUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
+    if (!auth) return;
+    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser) {
+        const basic = {
+          name: fbUser.displayName || "User",
+          email: fbUser.email || "",
+          photo: fbUser.photoURL || "https://www.gravatar.com/avatar/?d=mp",
           isLoggedIn: true,
-          uid: firebaseUser.uid,
+          uid: fbUser.uid,
           phone: '',
         };
-        setUser(prev => prev?.uid === basicUser.uid ? prev : basicUser);
-        syncProfileInBackground(firebaseUser);
+        setUser(prev => prev?.uid === basic.uid ? prev : basic);
+        syncProfile(fbUser);
       } else {
         setUser(null);
         setAddresses([]);
@@ -166,8 +161,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
 
-  const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
-    if (!auth) return { success: false, error: "Firebase offline." };
+  const loginWithGoogle = async () => {
+    if (!auth) return { success: false, error: "Auth offline" };
     try {
       await signInWithPopup(auth, googleProvider);
       return { success: true };
@@ -177,95 +172,60 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
-    if (!auth) return;
-    try {
-      await signOut(auth);
-      setUser(null);
-      setAddresses([]);
-    } catch (error) {
-      console.error("Logout Error:", error);
-    }
+    if (auth) await signOut(auth);
   };
 
-  const updateUserProfile = async (uid: string, data: { name?: string; phone?: string }) => {
-    if (!db) return { success: false, error: "Database offline" };
-    try {
-      const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, data);
-      setUser(prevUser => prevUser ? { ...prevUser, ...data } : null);
-      return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
+  const updateUserProfile = async (uid: string, data: any) => {
+    if (!db) return { success: false };
+    const userRef = doc(db, 'users', uid);
+    await updateDoc(userRef, data);
+    setUser(p => p ? { ...p, ...data } : null);
+    return { success: true };
   };
 
   const updateUserPhoto = async (uid: string, file: File) => {
-    if (!db || !storage) return { success: false, error: "Storage offline" };
-    try {
-      const storageRef = ref(storage, `profile_pictures/${uid}/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const photoURL = await getDownloadURL(storageRef);
-      const userDocRef = doc(db, 'users', uid);
-      await updateDoc(userDocRef, { photo: photoURL });
-      setUser(prevUser => prevUser ? { ...prevUser, photo: photoURL } : null);
-      return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
-  };
-  
-  const setDefaultAddress = async (uid: string, newDefaultId: string) => {
-    if (!db) return { success: false, error: "DB offline" };
-    try {
-      const batch = writeBatch(db);
-      const addressesRef = collection(db, 'users', uid, 'addresses');
-      const q = query(addressesRef, where("isDefault", "==", true));
-      const querySnapshot = await getDocs(q);
-      querySnapshot.forEach((doc) => {
-        if (doc.id !== newDefaultId) batch.update(doc.ref, { isDefault: false });
-      });
-      if (newDefaultId) {
-        const newDefaultRef = doc(addressesRef, newDefaultId);
-        batch.update(newDefaultRef, { isDefault: true });
-      }
-      await batch.commit();
-      fetchAddresses(uid);
-      return { success: true };
-    } catch (e: any) { return { success: false, error: e.message }; }
+    if (!storage || !db) return { success: false };
+    const sRef = ref(storage, `profiles/${uid}/${file.name}`);
+    await uploadBytes(sRef, file);
+    const url = await getDownloadURL(sRef);
+    await updateDoc(doc(db, 'users', uid), { photo: url });
+    setUser(p => p ? { ...p, photo: url } : null);
+    return { success: true };
   };
 
-  const addAddress = async (uid: string, addressData: Omit<Address, 'id'>) => {
-    if (!db) return { success: false, error: "DB offline" };
-    try {
-      if (addressData.isDefault) await setDefaultAddress(uid, '');
-      const addressesCol = collection(db, 'users', uid, 'addresses');
-      const newDocRef = await addDoc(addressesCol, addressData);
-      if (addressData.isDefault) await setDefaultAddress(uid, newDocRef.id);
-      fetchAddresses(uid);
-      return { success: true };
-    } catch (e: any) { return { success: false, error: e.message }; }
+  const addAddress = async (uid: string, data: any) => {
+    if (!db) return { success: false };
+    const col = collection(db, 'users', uid, 'addresses');
+    await addDoc(col, data);
+    fetchAddresses(uid);
+    return { success: true };
   };
 
-  const updateAddress = async (uid: string, addressId: string, addressData: Partial<Omit<Address, 'id'>>) => {
-    if (!db) return { success: false, error: "DB offline" };
-    try {
-      if (addressData.isDefault) await setDefaultAddress(uid, addressId);
-      const addressRef = doc(db, 'users', uid, 'addresses', addressId);
-      await updateDoc(addressRef, addressData);
-      fetchAddresses(uid);
-      return { success: true };
-    } catch (e: any) { return { success: false, error: e.message }; }
+  const updateAddress = async (uid: string, id: string, data: any) => {
+    if (!db) return { success: false };
+    await updateDoc(doc(db, 'users', uid, 'addresses', id), data);
+    fetchAddresses(uid);
+    return { success: true };
   };
 
-  const deleteAddress = async (uid: string, addressId: string) => {
-    if (!db) return { success: false, error: "DB offline" };
-    try {
-      await deleteDoc(doc(db, 'users', uid, 'addresses', addressId));
-      fetchAddresses(uid);
-      return { success: true };
-    } catch (e: any) { return { success: false, error: e.message }; }
+  const deleteAddress = async (uid: string, id: string) => {
+    if (!db) return { success: false };
+    await deleteDoc(doc(db, 'users', uid, 'addresses', id));
+    fetchAddresses(uid);
+    return { success: true };
   };
-  
+
+  const setDefaultAddress = async (uid: string, id: string) => {
+    if (!db) return { success: false };
+    const batch = writeBatch(db);
+    const col = collection(db, 'users', uid, 'addresses');
+    const snaps = await getDocs(col);
+    snaps.forEach(d => batch.update(d.ref, { isDefault: d.id === id }));
+    await batch.commit();
+    fetchAddresses(uid);
+    return { success: true };
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, loading, loginWithGoogle, logout, updateUserProfile, updateUserPhoto,
@@ -278,6 +238,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within an AuthProvider");
+  if (!context) throw new Error("useAuth Error");
   return context;
 };
