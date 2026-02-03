@@ -4,8 +4,8 @@ import { useCart } from '../context/CartContext';
 import AlmarkyFullLogo from './AlmarkyFullLogo';
 
 // Official brand logo component using the new FULL vector logo
-export const AlmarkyLogo: React.FC<{ className?: string, onDoubleClick?: (e: React.MouseEvent) => void }> = ({ className = "h-10 w-auto", onDoubleClick }) => (
-  <div onDoubleClick={onDoubleClick} className="cursor-pointer select-none">
+export const AlmarkyLogo: React.FC<{ className?: string }> = ({ className = "h-10 w-auto" }) => (
+  <div className="select-none">
     <AlmarkyFullLogo className={className} />
   </div>
 );
@@ -15,23 +15,15 @@ const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
 
-  const handleAdminTrigger = (e: React.MouseEvent) => {
-    // Prevent the Link's default click behavior from firing if we are double clicking
-    e.preventDefault();
-    e.stopPropagation();
-    navigate('/almarky-internal-v2026');
-  };
-
   return (
     <nav className="bg-white border-b border-slate-50 sticky top-0 z-50 h-16 flex items-center shadow-sm">
       <div className="max-w-7xl mx-auto w-full px-4 flex justify-between items-center">
         {/* Left Side: Logo & Desktop Nav */}
         <div className="flex items-center space-x-10">
           <div className="flex items-center active-press flex-shrink-0">
-            {/* Wrapped in a div instead of Link for the logo area to handle Admin/Home logic better */}
-            <div onClick={() => navigate('/')} className="cursor-pointer">
-              <AlmarkyLogo onDoubleClick={handleAdminTrigger} />
-            </div>
+            <Link to="/" className="cursor-pointer">
+              <AlmarkyLogo />
+            </Link>
           </div>
 
           <div className="hidden md:flex items-center space-x-8">
