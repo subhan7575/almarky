@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useOrders } from '../context/OrderContext';
 import { Order } from '../types';
-import Spinner from '../components/ui/Spinner';
+
 
 const Success: React.FC = () => {
   const location = useLocation();
