@@ -26,10 +26,12 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const { user } = useAuth();
 
   const fetchUserOrders = async () => {
+    // 1. Immediate local load
     const saved = localStorage.getItem('almarky_user_orders');
     if (saved) setOrders(JSON.parse(saved));
 
-    if (!user?.uid || !db) return;
+    // 2. Background sync from Firestore
+    if (!user?.email || !db) return;
     
     try {
       const ordersRef = collection(db, 'orders');
@@ -45,7 +47,7 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         localStorage.setItem('almarky_user_orders', JSON.stringify(fetchedOrders));
       }
     } catch (e) {
-      console.warn("Local sync only.");
+      console.warn("Firestore sync skipped, using local vault.");
     }
   };
 
@@ -54,32 +56,37 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [user]);
 
   const saveOrder = async (order: Order) => {
-    // 1. Local Persistence (Instant)
+    // STEP 1: Save to local storage immediately (Zero Latency)
     const local = JSON.parse(localStorage.getItem('almarky_user_orders') || '[]');
     const updated = [order, ...local];
     localStorage.setItem('almarky_user_orders', JSON.stringify(updated));
     setOrders(updated);
     
-    // 2. Cloud Storage (Wait up to 3 seconds)
+    // STEP 2: Save to Firestore (Background - NO AWAIT)
     if (db) {
-      try {
-        const orderRef = doc(db, 'orders', order.orderId);
-        await setDoc(orderRef, order);
-        return { success: true };
-      } catch (err: any) {
-        console.error("Firestore Error:", err);
-        // We still return true because local storage is a valid fallback
-        return { success: true };
-      }
+      // Fire and forget - do not await here so the UI doesn't hang
+      setDoc(doc(db, 'orders', order.orderId), order)
+        .catch(err => console.error("Firestore Background Write Error:", err));
     }
     
+    // Resolve immediately
     return { success: true };
   };
 
   const getOrderById = async (id: string) => {
+    // Check local state first
     const local = orders.find(o => o.orderId === id);
     if (local) return local;
 
+    // Fallback to localStorage if state is lost
+    const saved = localStorage.getItem('almarky_user_orders');
+    if (saved) {
+      const parsed = JSON.parse(saved) as Order[];
+      const found = parsed.find(o => o.orderId === id);
+      if (found) return found;
+    }
+
+    // Finally try Firestore
     if (db) {
       try {
         const snap = await getDoc(doc(db, 'orders', id));
